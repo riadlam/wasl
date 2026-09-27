@@ -1,0 +1,64 @@
+AI Assistants
+Use with AI Assistants
+
+Copy page
+
+Connect the social media API for AI agents to Claude, ChatGPT, Mistral, Cursor, VS Code, and other AI tools as an MCP server.
+
+SocialAPI is a social media API for AI agents, exposed as an MCP (Model Context Protocol) server. Once connected, your AI assistant can list accounts, fetch comments, reply, send DMs, publish posts, and more through natural language.
+MCP Server URL: https://api.social-api.ai/mcp
+​
+Authentication
+The MCP endpoint accepts two credential types on the Authorization: Bearer header:
+Method	Best for	How to obtain
+OAuth 2.1 with PKCE	Claude, ChatGPT, Cursor, VS Code, Le Chat, and other MCP clients with built-in OAuth	Handled automatically by the client on first tool use
+API key	Custom MCP clients, headless agents, server-side scripts, CI jobs	Create one in the dashboard, prefix sapi_key_
+OAuth-capable clients discover the authorization server via /.well-known/oauth-protected-resource, so no credentials are needed in their config files. For everything else, see Custom MCP clients.
+​
+Choose your platform
+Claude
+Web, Desktop, Claude Code, Mobile
+ChatGPT
+Web, Desktop, Mobile
+Mistral / Le Chat
+Web, Mobile
+Cursor
+Config file or Settings UI
+VS Code + Copilot
+Config file or Command Palette
+​
+Available tools
+Your AI assistant has access to 79 tools covering all SocialAPI functionality:
+Category	What the assistant can do
+Accounts	List connected accounts, connect new accounts, disconnect, complete OAuth exchange, list account pages, fetch creator info, get per-account limits
+Brands	List, create, update, delete brands
+Posts	List, create, get, update, delete, retry, unpublish posts; fetch metrics; validate; import
+Instagram Stories	List currently-active Instagram Stories (Instagram only)
+Media	List, delete media; get upload URLs; upload; verify; check storage usage
+Comments	List commented posts, list comments on a post, list reply threads, reply, hide/unhide, like/unlike, delete, send private reply, moderate
+DMs	List conversations, get conversation, list and send messages, mark as read
+Reviews	List reviews, reply to a review, update or delete a review reply
+Mentions	Fetch mentions for an account
+Inbox posts	List inbox posts
+Usage	Check workspace usage, per-account limits, storage usage, account constraints, publishing constraints
+Keys	List, revoke API keys
+Webhooks	List, create, get, update, delete webhooks; list deliveries; retry deliveries; test webhooks; list event catalog
+Exports	Create exports, get an export, list exports, fetch export videos
+Events	List events, fetch events summary
+Invites	List, create, revoke brand invites
+Users	Get/update profile
+Feedback	Send feedback to the SocialAPI team
+​
+Troubleshooting
+Authorization fails or loops - Make sure pop-ups are not blocked in your browser when the OAuth window opens. Some browser extensions (ad blockers, privacy tools) can interfere with the redirect.
+Tool calls fail with 401 - Your OAuth session may have expired. Remove the SocialAPI connection and re-add it to trigger a fresh authorization. If you authenticate with an API key, check that the key is still active in the dashboard.
+“MCP server not responding” - Verify the URL is exactly https://api.social-api.ai/mcp. Check status.social-api.ai for any ongoing incidents.
+​
+Still have questions?
+If you have any issues or want to learn more about using SocialAPI with AI assistants, reach out to our support team at support@social-api.ai.
+Claude
+Pricing
+x
+github
+linkedin
+Powered by

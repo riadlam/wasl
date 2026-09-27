@@ -1,0 +1,1668 @@
+The architecture I recommend
+
+Think about your system like this:
+
+                    YOUR SAAS
+              ┌───────────────────┐
+              │   React Frontend  │
+              └─────────┬─────────┘
+                        │
+                     REST API
+                        │
+              ┌─────────▼─────────┐
+              │ Laravel Backend   │
+              │                   │
+              │ Auth / Tenants    │
+              │ AI Agent Engine   │
+              │ Social Service    │
+              │ Commerce Service  │
+              │ Knowledge Base    │
+              │ Automation       │
+              └───────┬─┬─┬───────┘
+                      │ │ │
+             ┌────────┘ │ └─────────┐
+             │          │           │
+          MySQL       Redis       Storage
+             │          │           │
+             │       Queues       S3/R2
+             │          │
+             ▼          ▼
+       ┌─────────────────────┐
+       │    AI PROVIDERS     │
+       │                     │
+       │ LLM                 │
+       │ Speech-to-text      │
+       │ Text-to-speech      │
+       │ Vision              │
+       └──────────┬──────────┘
+                  │
+                  ▼
+       ┌─────────────────────┐
+       │    SocialAPI.ai     │
+       │                     │
+       │ Instagram           │
+       │ Facebook            │
+       │ TikTok              │
+       │ WhatsApp            │
+       │ YouTube             │
+       │ Telegram            │
+       │ LinkedIn            │
+       │ X                   │
+       │ Google Business    │
+       └─────────────────────┘
+
+The most important concept:
+
+SocialAPI.ai does not need to know anything about the customer's business.
+
+Your system knows:
+
+customer
+products
+prices
+stock
+delivery
+Wilaya
+FAQs
+policies
+tone
+AI instructions
+orders
+customers
+conversation history
+
+SocialAPI knows:
+
+Instagram account
+Facebook Page
+WhatsApp
+TikTok
+etc.
+messages
+comments
+publishing
+media
+platform authentication
+2. Multi-tenancy
+
+Your platform will have:
+
+users
+   │
+   └── businesses
+          │
+          ├── social accounts
+          ├── AI agent
+          ├── products
+          ├── orders
+          ├── customers
+          ├── conversations
+          ├── knowledge
+          └── automations
+
+I strongly recommend:
+
+users
+businesses
+business_users
+
+instead of putting everything directly under users.
+
+Why?
+
+Because later a business might have:
+
+Owner
+Admin
+Employee
+Customer service agent
+Marketing manager
+3. Core database architecture
+
+I'd start MySQL roughly like this.
+
+Users
+users
+------
+id
+name
+email
+password
+phone
+status
+created_at
+updated_at
+Businesses / tenants
+businesses
+----------
+id
+name
+slug
+logo
+description
+phone
+email
+website
+currency
+timezone
+wilaya
+city
+status
+created_at
+updated_at
+
+For Algeria:
+
+currency = DZD
+timezone = Africa/Algiers
+Business users
+business_users
+--------------
+id
+business_id
+user_id
+role
+created_at
+
+Example:
+
+owner
+admin
+agent
+viewer
+4. Social accounts
+
+This is extremely important.
+
+social_accounts
+---------------
+id
+business_id
+
+provider
+socialapi_account_id
+socialapi_brand_id
+
+platform
+platform_account_id
+
+name
+username
+avatar_url
+
+status
+metadata JSON
+
+connected_at
+disconnected_at
+created_at
+updated_at
+
+Example:
+
+business_id: 15
+
+platform: instagram
+socialapi_account_id: acc_xxxxx
+
+platform: facebook
+socialapi_account_id: acc_yyyyy
+
+platform: whatsapp
+socialapi_account_id: acc_zzzzz
+
+Don't create separate tables:
+
+instagram_accounts
+facebook_accounts
+tiktok_accounts
+
+Don't do that.
+
+Use:
+
+social_accounts
+
+because SocialAPI already normalizes the platforms for you.
+
+Their API uses the concepts Brand → Account → Post → Interaction → Capability, and connected accounts are attached to brands.
+
+For your architecture:
+
+YOUR business
+      ↓
+SocialAPI Brand
+      ↓
+SocialAPI Accounts
+      ↓
+Instagram / Facebook / WhatsApp / ...
+
+Store the SocialAPI IDs in your DB.
+
+5. Why we need our own social_accounts table
+
+Never make your application depend on querying SocialAPI every time.
+
+For example:
+
+social_accounts
+id = 72
+business_id = 14
+platform = instagram
+socialapi_account_id = acc_123
+
+Then your application knows:
+
+$account->business_id
+$account->platform
+$account->socialapi_account_id
+
+SocialAPI remains the external source for actual social operations.
+
+6. Conversations
+
+This is the heart of the AI agent.
+
+conversations
+-------------
+id
+business_id
+social_account_id
+
+socialapi_conversation_id
+
+platform
+customer_id
+
+status
+assigned_to
+ai_enabled
+
+last_message_at
+created_at
+updated_at
+
+Example:
+
+Business: Boutique Sarah
+
+Instagram
+   ↓
+Conversation #938
+
+Customer: Ahmed
+Message: "سلام شحال هادي؟"
+7. Customers
+
+You should create your own unified customer.
+
+customers
+---------
+id
+business_id
+
+name
+phone
+email
+
+wilaya
+commune
+
+language
+metadata JSON
+
+created_at
+updated_at
+
+Then:
+
+customer_social_profiles
+------------------------
+id
+customer_id
+platform
+platform_user_id
+username
+profile_url
+metadata JSON
+
+This allows you to recognize:
+
+Ahmed on Instagram
+Ahmed on WhatsApp
+Ahmed on Facebook
+
+as potentially the same customer.
+
+Don't assume they are the same automatically, though.
+
+Phone number is a much stronger identity link.
+
+8. Messages
+messages
+--------
+id
+business_id
+conversation_id
+customer_id
+
+socialapi_message_id
+
+direction
+type
+
+sender_type
+sender_id
+
+text
+
+media_url
+media_type
+
+reply_to_message_id
+
+ai_generated
+ai_model
+
+status
+
+metadata JSON
+
+created_at
+updated_at
+
+For example:
+
+direction:
+inbound
+outbound
+
+type:
+text
+image
+video
+audio
+file
+sticker
+
+This is where voice messages become important.
+
+9. Voice-message architecture
+
+SocialAPI gives you access to inbound inbox media; its current API includes an endpoint for retrieving mirrored inbound attachments.
+
+So:
+
+Customer sends voice
+        ↓
+SocialAPI
+        ↓
+Webhook
+        ↓
+Laravel
+        ↓
+messages
+type = audio
+        ↓
+Download audio
+        ↓
+Speech-to-text
+        ↓
+Arabic/Darja transcript
+        ↓
+AI Agent
+        ↓
+Response text
+        ↓
+Text-to-speech
+        ↓
+Audio
+        ↓
+SocialAPI
+        ↓
+Customer
+
+Important:
+
+SocialAPI is not your AI speech engine.
+
+You should have separate services:
+
+Speech-to-text
+Text-to-speech
+LLM
+Vision
+
+That keeps your architecture flexible.
+
+10. The AI Agent itself
+
+I would NOT put the AI logic directly inside your controller.
+
+Create:
+
+app/
+    AI/
+        Agents/
+            BusinessAgent.php
+
+        Tools/
+            SearchProducts.php
+            GetProductPrice.php
+            GetOrderStatus.php
+            SearchCustomer.php
+            GetBusinessInfo.php
+            CreateOrder.php
+            SendMessage.php
+            ReplyToComment.php
+            PublishPost.php
+
+        Memory/
+            ConversationMemory.php
+
+        Prompts/
+            BusinessAgentPrompt.php
+
+The flow:
+
+Webhook
+   ↓
+ProcessIncomingMessageJob
+   ↓
+AgentService
+   ↓
+Understand intent
+   ↓
+Load business context
+   ↓
+Load customer context
+   ↓
+Load conversation
+   ↓
+AI
+   ↓
+Tool call if necessary
+   ↓
+Action
+   ↓
+Response
+11. DO NOT give the AI direct database access
+
+This is very important.
+
+Don't do:
+
+LLM → SQL
+
+Instead:
+
+LLM
+ ↓
+Tool
+ ↓
+Laravel Service
+ ↓
+MySQL
+
+Example.
+
+Customer:
+
+"واش كاين هذا البرودوي؟"
+
+AI decides:
+
+search_products("this product")
+
+Your tool:
+
+SearchProducts
+
+queries MySQL.
+
+Then returns:
+
+{
+    "product": "Nike Air Max",
+    "price": 8500,
+    "stock": 4,
+    "delivery_available": true
+}
+
+AI generates:
+
+نعم كاين، السعر 8500 دج وباقي 4 حبات.
+
+This gives you control.
+
+12. Business knowledge
+
+Every business needs its own knowledge.
+
+knowledge_documents
+-------------------
+id
+business_id
+title
+type
+content
+status
+created_at
+updated_at
+
+Types:
+
+faq
+policy
+delivery
+return_policy
+payment
+about
+custom
+
+Example:
+
+Delivery policy:
+
+Batna: 600 DA
+Algiers: 500 DA
+Oran: 650 DA
+
+Delivery time:
+2-4 days.
+
+The AI uses this when answering.
+
+13. Products
+
+For ecommerce:
+
+products
+--------
+id
+business_id
+
+name
+slug
+description
+
+sku
+price
+compare_price
+
+stock
+status
+
+category_id
+
+metadata JSON
+
+created_at
+updated_at
+
+Then:
+
+product_variants
+----------------
+id
+product_id
+name
+sku
+price
+stock
+attributes JSON
+
+Example:
+
+T-shirt
+ ├── Black / M
+ ├── Black / L
+ ├── White / M
+ └── White / L
+14. Orders
+
+This is where your agent becomes actually useful for ecommerce.
+
+orders
+------
+id
+business_id
+customer_id
+
+order_number
+
+status
+
+subtotal
+delivery_fee
+discount
+total
+
+currency
+
+wilaya
+commune
+address
+phone
+
+source
+created_at
+updated_at
+
+Then:
+
+order_items
+-----------
+id
+order_id
+product_id
+variant_id
+
+product_name
+quantity
+unit_price
+total
+
+Your AI can then answer:
+
+وين راه طلبي؟
+
+Tool:
+
+get_order_status()
+
+Laravel checks:
+
+ORD-2026-00192
+
+and returns:
+
+status = shipped
+carrier = Yalidine
+tracking = ...
+
+AI answers the customer.
+
+15. Agent configuration
+
+Each business needs its own AI personality.
+
+agents
+------
+id
+business_id
+
+name
+
+system_prompt
+
+language
+tone
+
+ai_enabled
+
+auto_reply_comments
+auto_reply_dms
+auto_reply_whatsapp
+
+auto_publish
+
+human_approval_required
+
+created_at
+updated_at
+
+But I would actually split settings further:
+
+agent_settings
+--------------
+id
+business_id
+
+language
+tone
+response_length
+
+auto_reply_comments
+auto_reply_dms
+auto_reply_reviews
+
+allow_order_creation
+allow_refunds
+
+require_human_approval
+
+max_actions_per_hour
+16. Rules / guardrails
+
+This will become one of your most important SaaS features.
+
+agent_rules
+-----------
+id
+business_id
+
+name
+type
+
+condition JSON
+action JSON
+
+enabled
+priority
+
+Examples:
+
+Rule 1
+IF customer asks for price
+THEN AI may answer automatically
+Rule 2
+IF customer asks for refund
+THEN transfer to human
+Rule 3
+IF customer says "complaint"
+THEN human takeover
+Rule 4
+IF order > 100000 DZD
+THEN human approval
+Rule 5
+IF customer asks about stock
+THEN query database
+17. AI tool architecture
+
+This is the part I think will make your SaaS powerful.
+
+Create internal tools:
+
+AI Tools
+│
+├── search_products
+├── get_product
+├── get_product_stock
+├── get_delivery_price
+├── get_order
+├── get_customer
+├── create_order
+├── cancel_order
+├── search_faq
+├── get_business_policy
+│
+├── reply_to_message
+├── reply_to_comment
+├── private_reply
+├── publish_post
+├── schedule_post
+│
+└── handoff_to_human
+
+The AI doesn't know how Instagram works.
+
+It just knows:
+
+reply_to_customer()
+publish_content()
+search_products()
+create_order()
+
+Your Laravel tools translate those into:
+
+SocialAPI
+MySQL
+AI providers
+your own services
+18. SocialAPI service
+
+Create:
+
+app/Services/SocialApi/
+
+For example:
+
+SocialApiClient.php
+SocialApiAccountService.php
+SocialApiInboxService.php
+SocialApiPublishingService.php
+SocialApiMediaService.php
+SocialApiWebhookService.php
+
+So your code becomes:
+
+$socialApi->sendMessage(
+    $account,
+    $conversation,
+    $message
+);
+
+instead of having SocialAPI HTTP calls everywhere.
+
+19. SocialAPI webhook flow
+
+This is probably the most important integration.
+
+SocialAPI currently supports webhook events including:
+
+comment.received
+dm.received
+dm.sent
+dm.referral
+review.received
+mention.received
+
+and sends them to your HTTPS endpoint.
+
+Your endpoint:
+
+POST /api/webhooks/socialapi
+
+Flow:
+
+Instagram
+   ↓
+SocialAPI
+   ↓
+POST /api/webhooks/socialapi
+   ↓
+Verify signature
+   ↓
+Store event
+   ↓
+Return 200
+   ↓
+Queue job
+
+Do not run the AI inside the webhook request.
+
+Very important.
+
+20. Webhook event table
+
+Create:
+
+webhook_events
+--------------
+id
+business_id
+
+provider
+event_id
+event_type
+
+payload JSON
+
+signature_valid
+
+processed_at
+failed_at
+
+created_at
+
+Add unique index:
+
+(provider, event_id)
+
+Why?
+
+SocialAPI retries failed webhook deliveries, so you need idempotency. Their docs specifically recommend deduplicating using the interaction/event ID.
+
+21. Webhook security
+
+SocialAPI signs webhook requests using:
+
+X-SocialAPI-Signature
+
+with HMAC-SHA256.
+
+Your Laravel middleware/service should:
+
+receive raw body
+       ↓
+calculate HMAC
+       ↓
+compare signatures
+       ↓
+reject if invalid
+       ↓
+store event
+       ↓
+queue processing
+
+Never trust:
+
+{
+   "business_id": 123
+}
+
+just because it came in the request.
+
+Determine the business from your mapping:
+
+socialapi_account_id
+        ↓
+social_accounts
+        ↓
+business_id
+22. Queue architecture
+
+You definitely need Redis + Laravel Queue.
+
+Something like:
+
+Redis
+│
+├── webhooks
+├── ai
+├── social
+├── publishing
+├── transcription
+├── notifications
+└── scheduled
+
+Example:
+
+ProcessSocialWebhookJob
+        ↓
+ProcessIncomingMessageJob
+        ↓
+RunAgentJob
+        ↓
+GenerateResponseJob
+        ↓
+SendSocialMessageJob
+
+Don't make the user wait for the entire AI pipeline.
+
+23. Agent run tracking
+
+Create:
+
+agent_runs
+----------
+id
+business_id
+conversation_id
+message_id
+
+status
+
+model
+provider
+
+input_tokens
+output_tokens
+
+started_at
+completed_at
+
+error
+metadata JSON
+
+Then:
+
+agent_tool_calls
+----------------
+id
+agent_run_id
+
+tool
+arguments JSON
+result JSON
+
+status
+duration_ms
+
+created_at
+
+This becomes extremely useful when a customer asks:
+
+Why did the AI tell my customer this?
+
+You can see:
+
+Agent Run #9211
+
+Input:
+"شحال التوصيل لسطيف؟"
+
+Tool:
+get_delivery_price
+
+Result:
+500 DZD
+
+AI:
+"التوصيل لسطيف 500 دج."
+24. Human takeover
+
+This is essential for a commercial product.
+
+Conversation:
+
+AI
+ ↓
+Customer angry
+ ↓
+Rule detects escalation
+ ↓
+AI stops
+ ↓
+human agent takes over
+
+Database:
+
+conversations
+
+ai_enabled = false
+assigned_to = 19
+status = human
+
+Then employee replies manually from your dashboard.
+
+When done:
+
+Resume AI
+25. Publishing architecture
+
+SocialAPI already provides publishing and scheduling through /v1/posts, with multiple target accounts and per-platform delivery tracking.
+
+Your system should have:
+
+content_posts
+-------------
+id
+business_id
+
+title
+caption
+
+status
+scheduled_at
+
+ai_generated
+approved_by
+
+created_at
+published_at
+
+Then:
+
+content_post_targets
+--------------------
+id
+content_post_id
+social_account_id
+
+socialapi_post_id
+
+status
+error
+published_at
+
+So one AI-generated post:
+
+"عرض خاص هذا الأسبوع..."
+
+can target:
+
+Instagram
+Facebook
+TikTok
+LinkedIn
+26. AI publishing should NOT be unrestricted
+
+I recommend:
+
+AI generates post
+       ↓
+draft
+       ↓
+business owner approves
+       ↓
+Laravel
+       ↓
+SocialAPI
+       ↓
+publish
+
+Later allow:
+
+Auto-publish = ON
+
+for trusted businesses.
+
+SocialAPI itself supports the draft/validate/publish workflow, so your platform can build your own approval layer around those primitives.
+
+27. Content calendar
+
+Eventually:
+
+content_calendar
+----------------
+id
+business_id
+content_post_id
+
+scheduled_at
+status
+
+Example:
+
+Monday
+10:00
+Instagram + Facebook
+
+Wednesday
+19:00
+TikTok
+
+Friday
+16:00
+Instagram Reel
+
+Your Laravel scheduler triggers the appropriate publishing job.
+
+28. The actual AI conversation flow
+
+Example Algerian ecommerce business.
+
+Customer:
+
+سلام شحال هذي؟
+
+Step 1
+
+SocialAPI:
+
+dm.received
+Step 2
+
+Laravel webhook:
+
+socialapi_message_id
+Step 3
+
+Find:
+
+social_account
+
+→ business.
+
+Step 4
+
+Find:
+
+customer
+conversation
+Step 5
+
+Load:
+
+business info
+agent settings
+conversation history
+knowledge
+Step 6
+
+AI:
+
+Customer wants product price.
+Step 7
+
+Tool:
+
+search_products()
+Step 8
+
+MySQL:
+
+product = 4500 DZD
+stock = 12
+Step 9
+
+AI generates Darja:
+
+سلام، هذي بـ4500 دج وراهـي متوفرة حاليا.
+
+Step 10
+
+Laravel:
+
+SocialApiInboxService
+Step 11
+
+SocialAPI:
+
+send message
+Step 12
+
+Store outbound message.
+
+29. Voice flow
+
+Customer:
+
+🎤 voice message
+
+SocialAPI
+ ↓
+Laravel webhook
+ ↓
+message type = audio
+ ↓
+download attachment
+ ↓
+STT
+ ↓
+"سلام واش كاين التوصيل لباتنة؟"
+ ↓
+Agent
+ ↓
+get_delivery_price
+ ↓
+"نعم، التوصيل لباتنة 600 دج."
+ ↓
+TTS
+ ↓
+audio
+ ↓
+SocialAPI
+ ↓
+customer
+
+This is where your product becomes much more interesting than a normal chatbot.
+
+30. Vision
+
+Also add:
+
+Customer sends image
+
+Example:
+
+"عندكم هذي؟"
+
+AI:
+
+image
+ ↓
+vision model
+ ↓
+recognize product
+ ↓
+search_products()
+ ↓
+answer
+
+Your message table already supports:
+
+type = image
+media_url
+
+so the architecture is ready.
+
+31. Recommended Laravel structure
+
+I'd structure your existing Laravel project approximately:
+
+app/
+├── AI/
+│   ├── Agents/
+│   ├── Tools/
+│   ├── Prompts/
+│   ├── Memory/
+│   └── Providers/
+│
+├── Domain/
+│   ├── Businesses/
+│   ├── Customers/
+│   ├── Conversations/
+│   ├── Orders/
+│   ├── Products/
+│   ├── Social/
+│   └── Publishing/
+│
+├── Services/
+│   ├── SocialApi/
+│   ├── AI/
+│   ├── Speech/
+│   ├── Storage/
+│   └── Billing/
+│
+├── Jobs/
+│   ├── Social/
+│   ├── AI/
+│   ├── Publishing/
+│   └── Media/
+│
+├── Http/
+│   ├── Controllers/
+│   └── Middleware/
+│
+└── Models/
+32. MySQL relationship overview
+
+The important relationships are:
+
+users
+  │
+  ▼
+business_users
+  │
+  ▼
+businesses
+  │
+  ├──────────── social_accounts
+  │                    │
+  │                    ▼
+  │              conversations
+  │                    │
+  │                    ▼
+  │                 messages
+  │
+  ├──────────── customers
+  │                    │
+  │                    ▼
+  │            customer_social_profiles
+  │
+  ├──────────── products
+  │                    │
+  │                    ▼
+  │             product_variants
+  │
+  ├──────────── orders
+  │                    │
+  │                    ▼
+  │              order_items
+  │
+  ├──────────── agents
+  │
+  ├──────────── agent_rules
+  │
+  ├──────────── knowledge_documents
+  │
+  └──────────── content_posts
+                       │
+                       ▼
+                content_post_targets
+33. One thing I would NOT do
+
+Don't make your DB a copy of SocialAPI.
+
+For example, don't try to recreate every SocialAPI object.
+
+You need only your application's important state.
+
+Your DB:
+
+business
+customer
+conversation
+message
+product
+order
+agent
+content
+
+SocialAPI:
+
+social account
+platform post
+platform interaction
+platform media
+
+You link them using IDs.
+
+34. SocialAPI's role in your SaaS
+
+Think of it as:
+
+                YOUR PRODUCT
+
+      ┌─────────────────────────────┐
+      │ AI BUSINESS AGENT           │
+      │                             │
+      │ Brain                       │
+      │ Memory                      │
+      │ Products                    │
+      │ Orders                      │
+      │ Rules                       │
+      │ Knowledge                   │
+      │ Customers                   │
+      └─────────────┬───────────────┘
+                    │
+              SocialApiService
+                    │
+      ┌─────────────▼───────────────┐
+      │       SocialAPI.ai          │
+      │                             │
+      │ OAuth                       │
+      │ Social accounts             │
+      │ Webhooks                    │
+      │ Messages                    │
+      │ Comments                    │
+      │ Publishing                  │
+      │ Media                       │
+      └─────────────┬───────────────┘
+                    │
+       ┌────────────┼─────────────┐
+       ▼            ▼             ▼
+   Instagram    Facebook       WhatsApp
+       │            │             │
+       ▼            ▼             ▼
+     TikTok       YouTube       Telegram
+
+That separation is very important.
+
+35. Connecting a customer's Instagram
+
+Your React UI:
+
+Settings
+   ↓
+Social Accounts
+   ↓
++ Connect Instagram
+
+Laravel calls SocialAPI's account-connect endpoint.
+
+SocialAPI returns an OAuth URL.
+
+Your frontend redirects the user.
+
+React
+ ↓
+Laravel
+ ↓
+SocialAPI
+ ↓
+Instagram OAuth
+ ↓
+SocialAPI
+ ↓
+Laravel callback
+
+SocialAPI's current docs expose /v1/accounts/connect, OAuth exchange, account listing, disconnecting, and Facebook/Google account assignment flows.
+
+After successful connection:
+
+socialapi_account_id
+
+gets stored in:
+
+social_accounts
+36. SocialAPI Brand mapping
+
+I recommend:
+
+YOUR BUSINESS #123
+        │
+        │
+        └── socialapi_brand_id = brand_xxx
+
+Then:
+
+YOUR BUSINESS
+│
+├── Instagram
+├── Facebook
+├── WhatsApp
+└── TikTok
+
+maps to:
+
+SocialAPI Brand
+│
+├── Account
+├── Account
+├── Account
+└── Account
+
+SocialAPI's current architecture explicitly uses brands as the grouping/tenancy object, and its scoped API keys can restrict access by brand.
+
+37. Security
+
+Never put:
+
+SAPI_KEY
+OPENAI_KEY
+STRIPE_KEY
+
+inside React.
+
+Only:
+
+React
+   ↓
+Laravel
+   ↓
+external APIs
+
+The browser should never know your SocialAPI secret.
+
+38. Storage
+
+I would use:
+
+MySQL
++
+Redis
++
+S3-compatible storage
+
+For example:
+
+Cloudflare R2
+AWS S3
+DigitalOcean Spaces
+
+Store:
+
+voice messages
+images
+videos
+AI-generated audio
+AI-generated images
+documents
+
+Don't put large files inside MySQL.
+
+39. Your eventual SaaS billing
+
+Later:
+
+subscriptions
+---------------
+id
+business_id
+plan_id
+status
+started_at
+ends_at
+
+And:
+
+usage_records
+-------------
+id
+business_id
+
+type
+quantity
+
+period
+metadata
+
+Track:
+
+AI messages
+AI tokens
+voice transcription
+voice generation
+image generation
+posts
+social interactions
+
+This lets you sell:
+
+Starter
+      1 business
+      2 social accounts
+      X AI messages
+
+Business
+      5 social accounts
+      X AI messages
+
+Pro
+      15 social accounts
+      voice
+      automation
+      publishing
+40. The MVP I would build first
+
+Don't build everything immediately.
+
+Phase 1 — Foundation
+Businesses
+Users
+Authentication
+Social accounts
+Phase 2 — Social inbox
+SocialAPI OAuth
+Webhooks
+Conversations
+Messages
+Comments
+Phase 3 — AI
+Agent
+Prompt
+Memory
+LLM
+Tools
+Phase 4 — Ecommerce
+Products
+Categories
+Customers
+Orders
+Delivery
+Phase 5 — Automation
+Auto reply
+Human takeover
+Rules
+Business hours
+Phase 6 — Voice
+Audio download
+Speech-to-text
+TTS
+Audio reply
+Phase 7 — Publishing
+AI content generation
+Content calendar
+Approval
+Scheduling
+Publishing
+Phase 8 — SaaS
+Subscriptions
+Usage
+Limits
+Billing
+Analytics

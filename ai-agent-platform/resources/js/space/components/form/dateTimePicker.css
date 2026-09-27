@@ -1,0 +1,61 @@
+/* Compact react-day-picker skin for schedule popover */
+.wasl-daypicker {
+    --rdp-accent-color: #e07a5f;
+    --rdp-accent-background-color: #f3efe8;
+    --rdp-day-height: 32px;
+    --rdp-day-width: 32px;
+    --rdp-day_button-height: 30px;
+    --rdp-day_button-width: 30px;
+    --rdp-nav_button-height: 26px;
+    --rdp-nav_button-width: 26px;
+    --rdp-nav-height: 28px;
+    --rdp-weekday-padding: 0.15rem 0;
+    --rdp-months-gap: 0;
+    margin: 0 !important;
+    font-size: 12px;
+}
+
+.wasl-daypicker .rdp-month_caption {
+    font-size: 0.8rem;
+    font-weight: 650;
+    color: #1a1a1a;
+}
+
+.wasl-daypicker .rdp-weekday {
+    font-size: 0.65rem;
+    font-weight: 650;
+    color: #8a847c;
+}
+
+.wasl-daypicker .rdp-day_button {
+    border-radius: 0.45rem;
+    font-weight: 500;
+}
+
+.wasl-daypicker .rdp-selected .rdp-day_button {
+    background: #e07a5f !important;
+    color: #fff !important;
+    border: none !important;
+    font-weight: 650;
+}
+
+.wasl-daypicker .rdp-today:not(.rdp-selected) .rdp-day_button {
+    color: #e07a5f;
+    font-weight: 700;
+}
+
+.wasl-daypicker .rdp-nav {
+    gap: 0.15rem;
+}
+
+.wasl-daypicker .rdp-button_previous,
+.wasl-daypicker .rdp-button_next {
+    border: 1px solid #e8e4de;
+    border-radius: 0.45rem;
+    color: #1a1a1a;
+}
+
+.wasl-daypicker .rdp-button_previous:hover,
+.wasl-daypicker .rdp-button_next:hover {
+    background: #f3efe8;
+}

@@ -22,7 +22,7 @@ class InternalAiController extends Controller
     public function invokeTool(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'surface' => ['required', 'string', 'in:owner,customer,campaign,campaign_brief,campaign_tease'],
+            'surface' => ['required', 'string', 'in:owner,customer,campaign,campaign_brief,campaign_tease,campaign_draft_slot,campaign_plan_slots,campaign_enhance,post_crafter'],
             'tool' => ['required', 'string', 'max:120'],
             'arguments' => ['nullable', 'array'],
             'context' => ['nullable', 'array'],
@@ -49,13 +49,23 @@ class InternalAiController extends Controller
             $arguments['limit'] = max(1, min(20, (int) $arguments['limit']));
         }
 
+        $campaignSurfaces = [
+            'campaign',
+            'campaign_brief',
+            'campaign_tease',
+            'campaign_draft_slot',
+            'campaign_plan_slots',
+            'campaign_enhance',
+            'post_crafter',
+        ];
+
         $surface = match ($data['surface']) {
             'customer' => McpContext::SURFACE_CUSTOMER,
-            'campaign', 'campaign_brief', 'campaign_tease' => McpContext::SURFACE_OWNER,
             default => McpContext::SURFACE_OWNER,
         };
-        // Campaign brief/tease still need catalog reads; owner registry includes Wasl + SocialAPI.
-        if (in_array($data['surface'], ['campaign', 'campaign_brief', 'campaign_tease'], true)
+        // Campaign drafting/planning needs catalog + recent posts (owner registry).
+        // Product tools also use the campaign registry when available.
+        if (in_array($data['surface'], $campaignSurfaces, true)
             && in_array($toolName, ['search_products', 'get_product', 'list_delivery_zones'], true)) {
             $surface = McpContext::SURFACE_CAMPAIGN;
         }

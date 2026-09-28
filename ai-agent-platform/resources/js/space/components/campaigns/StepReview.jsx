@@ -105,15 +105,19 @@ export default function StepReview({ state, accounts, launchNote }) {
 
                 <Panel title="Content">
                     <p className="text-[13px] font-semibold text-ink">{modeMeta.title}</p>
-                    <p className="mt-1 text-[12px] leading-relaxed text-ink/50">{modeMeta.request}</p>
-                    {state.contentMode === 'ai_recent' && (
-                        <p className="mt-2 rounded-lg bg-cream px-2.5 py-2 text-[12px] leading-relaxed text-ink">
-                            “{state.focusPrompt.trim()}”
-                        </p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-ink/50">{modeMeta.description}</p>
+                    {state.contentMode === 'ai_recent' && state.focusPrompt?.trim() && (
+                        <div className="mt-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink/40">Focus prompt</p>
+                            <p className="mt-1 rounded-lg bg-cream px-2.5 py-2 text-[12px] leading-relaxed text-ink">
+                                {state.focusPrompt.trim()}
+                            </p>
+                        </div>
                     )}
                     {state.contentMode === 'product_images' && (
                         <p className="mt-2 text-[12px] text-ink/50">
-                            {state.images.length} images (min {minImages})
+                            {state.images.length} image{state.images.length === 1 ? '' : 's'} uploaded
+                            {minImages > 0 ? ` (need ${minImages}+)` : ''}
                         </p>
                     )}
                 </Panel>

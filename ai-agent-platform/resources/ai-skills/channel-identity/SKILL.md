@@ -13,3 +13,4 @@ metadata.surfaces: profile
 - quoted_prices are verbatim strings from captions, comments, or DMs.
 - If the corpus shows digital products, do not invent delivery zones or shipping fees. Leave physical operations empty and say so in evidence.gaps only if a physical fact is actually missing.
 - Leave visual description fields empty in the text pass.
+- The channel page logo/avatar is the business mark for creatives: never invent a different logo when generating images for this channel.

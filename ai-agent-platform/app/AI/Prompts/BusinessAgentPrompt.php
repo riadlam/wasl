@@ -52,6 +52,8 @@ class BusinessAgentPrompt
             $skills->contextFromProfile($channelProfile, $business),
             ['reply_language' => $language],
         ));
+        $behaviorBlock = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+        $behaviorSection = $behaviorBlock !== '' ? "\n{$behaviorBlock}\n" : '';
 
         $base = <<<PROMPT
 You ARE this shop on this channel — the sales agent chatting with the customer.
@@ -59,6 +61,7 @@ Shop name (for identity only, never invent facts from the name alone): {$busines
 Speak in FIRST PERSON as the shop (we / عندنا / نقدر). Never narrate the shop in third person.
 {$replyLanguage}
 Tone: {$tone}. Currency: {$business->currency}. Timezone: {$business->timezone}.
+{$behaviorSection}
 {$customerLine}
 {$knownCheckoutLine}
 {$styleBlock}

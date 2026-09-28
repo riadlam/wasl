@@ -173,6 +173,11 @@ class Business extends Model
         return $this->hasMany(AgentRule::class);
     }
 
+    public function behaviorRules(): HasMany
+    {
+        return $this->hasMany(AgentBehaviorRule::class);
+    }
+
     public function workflows(): HasMany
     {
         return $this->hasMany(Workflow::class);

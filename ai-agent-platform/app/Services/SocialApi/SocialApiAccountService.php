@@ -185,10 +185,19 @@ class SocialApiAccountService
             return [];
         }
 
+        $pageId = $best['platform_page_id']
+            ?? $best['page_id']
+            ?? $best['platform_account_id']
+            ?? $best['id']
+            ?? null;
+
         return [
             'id' => $accountId,
             'name' => $best['name'] ?? null,
+            'page_name' => $best['name'] ?? null,
             'username' => $best['username'] ?? $best['page_id'] ?? null,
+            'platform_page_id' => $pageId,
+            'platform_account_id' => $pageId,
             'profile_picture_url' => $best['profile_picture_url']
                 ?? $best['picture_url']
                 ?? $best['avatar_url']
@@ -256,7 +265,7 @@ class SocialApiAccountService
         }
 
         $platform = $this->resolvePlatform($remote);
-        $name = $this->resolveAccountName($remote);
+        $identity = $this->resolveChannelIdentity($remote, $platform);
 
         $account = SocialAccount::query()->updateOrCreate(
             [
@@ -267,10 +276,10 @@ class SocialApiAccountService
                 'provider' => 'socialapi',
                 'socialapi_brand_id' => $shopBrand,
                 'platform' => $platform,
-                'platform_account_id' => $remote['platform_user_id'] ?? $remote['platform_account_id'] ?? null,
-                'name' => $name,
-                'username' => $remote['username'] ?? null,
-                'avatar_url' => $this->pictureUrl($remote),
+                'platform_account_id' => $identity['platform_account_id'],
+                'name' => $identity['name'],
+                'username' => $identity['username'],
+                'avatar_url' => $identity['avatar_url'],
                 'status' => 'connected',
                 'metadata' => $remote,
                 'connected_at' => now(),
@@ -279,10 +288,145 @@ class SocialApiAccountService
         );
 
         if ($platform === 'facebook') {
-            $this->enrichFacebookPageName($account);
+            $this->enrichFacebookPageIdentity($account);
         }
 
         return $account->fresh() ?? $account;
+    }
+
+    /**
+     * Prefer linked Page / selected channel profile over personal login user fields.
+     *
+     * @param  array<string, mixed>  $remote
+     * @return array{name: ?string, username: ?string, avatar_url: ?string, platform_account_id: ?string}
+     */
+    public function resolveChannelIdentity(array $remote, ?string $platform = null): array
+    {
+        $platform = strtolower(trim((string) ($platform ?: $this->resolvePlatform($remote))));
+
+        $page = is_array($remote['page'] ?? null) ? $remote['page'] : null;
+        if ($page === null && is_array($remote['pages'] ?? null)) {
+            foreach ($remote['pages'] as $candidate) {
+                if (! is_array($candidate)) {
+                    continue;
+                }
+                if (! empty($candidate['is_default'])) {
+                    $page = $candidate;
+                    break;
+                }
+                $page ??= $candidate;
+            }
+        }
+
+        $profile = null;
+        if (is_array($remote['profiles'] ?? null)) {
+            foreach ($remote['profiles'] as $candidate) {
+                if (! is_array($candidate)) {
+                    continue;
+                }
+                if (! empty($candidate['is_default']) || ! empty($candidate['selected'])) {
+                    $profile = $candidate;
+                    break;
+                }
+                $profile ??= $candidate;
+            }
+        }
+
+        $channel = $page ?? $profile;
+
+        $name = null;
+        $username = null;
+        $avatar = null;
+        $platformAccountId = null;
+
+        if (is_array($channel)) {
+            $name = $this->firstNonEmptyString([
+                $channel['name'] ?? null,
+                $channel['page_name'] ?? null,
+                $channel['display_name'] ?? null,
+            ]);
+            $username = $this->firstNonEmptyString([
+                $channel['username'] ?? null,
+                $channel['page_id'] ?? null,
+                $channel['handle'] ?? null,
+            ]);
+            $avatar = $this->pictureUrl($channel);
+            $platformAccountId = $this->firstNonEmptyString([
+                $channel['platform_page_id'] ?? null,
+                $channel['page_id'] ?? null,
+                $channel['platform_account_id'] ?? null,
+                $channel['id'] ?? null,
+            ]);
+        }
+
+        $name ??= $this->firstNonEmptyString([
+            $remote['page_name'] ?? null,
+            $remote['display_name'] ?? null,
+        ]);
+        $platformAccountId ??= $this->firstNonEmptyString([
+            $remote['platform_page_id'] ?? null,
+        ]);
+
+        // Facebook: pull Page from Pages API when payload still looks like the personal login.
+        if ($platform === 'facebook' && ($name === null || $avatar === null || $platformAccountId === null)) {
+            $fromPages = $this->fetchAccountFromPages((string) ($remote['id'] ?? $remote['account_id'] ?? ''));
+            if ($fromPages !== []) {
+                $name ??= $this->firstNonEmptyString([
+                    $fromPages['page_name'] ?? null,
+                    $fromPages['name'] ?? null,
+                ]);
+                $username ??= $this->firstNonEmptyString([$fromPages['username'] ?? null]);
+                $avatar ??= $this->pictureUrl($fromPages);
+                $platformAccountId ??= $this->firstNonEmptyString([
+                    $fromPages['platform_page_id'] ?? null,
+                    $fromPages['platform_account_id'] ?? null,
+                ]);
+            }
+        }
+
+        // Last resort: account-level fields (OK for IG/TikTok; avoid FB personal user id when possible).
+        if ($name === null) {
+            $name = $this->resolveAccountName($remote);
+        }
+        if ($username === null) {
+            $username = $this->firstNonEmptyString([$remote['username'] ?? null]);
+        }
+        if ($avatar === null) {
+            $avatar = $this->pictureUrl($remote);
+        }
+        if ($platformAccountId === null) {
+            $platformAccountId = $platform === 'facebook'
+                ? $this->firstNonEmptyString([$remote['platform_account_id'] ?? null])
+                : $this->firstNonEmptyString([
+                    $remote['platform_account_id'] ?? null,
+                    $remote['platform_user_id'] ?? null,
+                ]);
+        }
+
+        return [
+            'name' => $name,
+            'username' => $username,
+            'avatar_url' => $avatar,
+            'platform_account_id' => $platformAccountId,
+        ];
+    }
+
+    /**
+     * @param  list<mixed>  $candidates
+     */
+    private function firstNonEmptyString(array $candidates): ?string
+    {
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate) && ! is_numeric($candidate)) {
+                continue;
+            }
+            $value = trim((string) $candidate);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -360,29 +504,61 @@ class SocialApiAccountService
 
     public function enrichFacebookPageName(SocialAccount $account): void
     {
+        $this->enrichFacebookPageIdentity($account);
+    }
+
+    public function enrichFacebookPageIdentity(SocialAccount $account): void
+    {
         if (strtolower((string) $account->platform) !== 'facebook') {
             return;
         }
 
         $accountId = (string) ($account->socialapi_account_id ?? '');
-        $pageName = $this->fetchDefaultPageName($accountId);
-        if ($pageName === null) {
-            $meta = is_array($account->metadata) ? $account->metadata : [];
-            $pageName = trim((string) ($meta['page_name'] ?? ''));
-            $pageName = $pageName !== '' ? $pageName : null;
+        $fromPages = $this->fetchAccountFromPages($accountId);
+        $identity = $fromPages !== []
+            ? $this->resolveChannelIdentity(array_merge(
+                is_array($account->metadata) ? $account->metadata : [],
+                $fromPages,
+                ['id' => $accountId, 'platform' => 'facebook'],
+            ), 'facebook')
+            : $this->resolveChannelIdentity(array_merge(
+                is_array($account->metadata) ? $account->metadata : [],
+                ['id' => $accountId, 'platform' => 'facebook'],
+            ), 'facebook');
+
+        $updates = [];
+        if (is_string($identity['name']) && $identity['name'] !== '' && $identity['name'] !== (string) $account->name) {
+            $updates['name'] = $identity['name'];
+        }
+        if (is_string($identity['username']) && $identity['username'] !== '' && $identity['username'] !== (string) $account->username) {
+            $updates['username'] = $identity['username'];
+        }
+        if (is_string($identity['avatar_url']) && $identity['avatar_url'] !== '' && $identity['avatar_url'] !== (string) $account->avatar_url) {
+            $updates['avatar_url'] = $identity['avatar_url'];
+        }
+        if (is_string($identity['platform_account_id']) && $identity['platform_account_id'] !== ''
+            && $identity['platform_account_id'] !== (string) $account->platform_account_id) {
+            $updates['platform_account_id'] = $identity['platform_account_id'];
         }
 
-        if ($pageName === null || $pageName === (string) $account->name) {
+        if ($updates === []) {
             return;
         }
 
         $meta = is_array($account->metadata) ? $account->metadata : [];
-        $meta['page_name'] = $pageName;
+        if (isset($updates['name'])) {
+            $meta['page_name'] = $updates['name'];
+        }
+        if ($fromPages !== []) {
+            $meta['page'] = $fromPages['page'] ?? ($meta['page'] ?? null);
+            $meta['pages'] = $fromPages['pages'] ?? ($meta['pages'] ?? null);
+            if (isset($fromPages['platform_page_id'])) {
+                $meta['platform_page_id'] = $fromPages['platform_page_id'];
+            }
+        }
+        $updates['metadata'] = $meta;
 
-        $account->update([
-            'name' => $pageName,
-            'metadata' => $meta,
-        ]);
+        $account->update($updates);
     }
 
     private function fetchDefaultPageName(string $accountId): ?string
@@ -690,17 +866,18 @@ class SocialApiAccountService
 
             $merged = array_merge($account->metadata ?? [], $data);
             $platform = $this->resolvePlatform($merged, $account->platform);
-            $resolved = $this->resolveAccountName(array_merge($merged, [
+            $identity = $this->resolveChannelIdentity(array_merge($merged, [
                 'id' => $accountId,
                 'platform' => $platform,
-            ]));
+            ]), $platform);
 
             $account->update([
                 'status' => 'connected',
                 'platform' => $platform,
-                'name' => $resolved ?? $account->name,
-                'username' => $data['username'] ?? $account->username,
-                'avatar_url' => $this->pictureUrl($data) ?? $account->avatar_url,
+                'name' => $identity['name'] ?? $account->name,
+                'username' => $identity['username'] ?? $account->username,
+                'avatar_url' => $identity['avatar_url'] ?? $account->avatar_url,
+                'platform_account_id' => $identity['platform_account_id'] ?? $account->platform_account_id,
                 'connected_at' => isset($data['connected_at']) ? Carbon::parse($data['connected_at']) : now(),
                 'disconnected_at' => null,
                 'metadata' => $merged,
@@ -708,7 +885,7 @@ class SocialApiAccountService
 
             $fresh = $account->fresh();
             if ($fresh) {
-                $this->enrichFacebookPageName($fresh);
+                $this->enrichFacebookPageIdentity($fresh);
             }
 
             return $fresh ?? $account;
@@ -725,19 +902,11 @@ class SocialApiAccountService
             return null;
         }
 
-        return $this->upsertFromRemote($business, [
+        return $this->upsertFromRemote($business, array_merge($data, [
             'id' => $accountId,
             'brand_id' => $brandId,
             'platform' => $this->resolvePlatform($data),
-            'platform_user_id' => $data['platform_user_id'] ?? null,
-            'page_name' => $data['page_name'] ?? null,
-            'display_name' => $data['display_name'] ?? null,
-            'username' => $data['username'] ?? null,
-            'profile_picture_url' => $data['profile_picture_url'] ?? null,
-            'profile_url' => $data['profile_url'] ?? null,
-            'page' => $data['page'] ?? null,
-            'pages' => $data['pages'] ?? null,
-        ]);
+        ]));
     }
 
     public function markDisconnected(array $data): ?SocialAccount
@@ -766,21 +935,44 @@ class SocialApiAccountService
      */
     private function pictureUrl(array $payload): ?string
     {
-        foreach (['profile_picture_url', 'avatar_url', 'picture'] as $key) {
-            $value = $payload[$key] ?? null;
-            if (is_string($value)) {
-                $value = trim($value);
-                if ($value !== '' && str_starts_with($value, 'http')) {
-                    return $value;
+        $sources = [$payload];
+        if (is_array($payload['page'] ?? null)) {
+            array_unshift($sources, $payload['page']);
+        }
+        if (is_array($payload['pages'] ?? null)) {
+            $bestPage = null;
+            foreach ($payload['pages'] as $page) {
+                if (! is_array($page)) {
+                    continue;
                 }
+                if (! empty($page['is_default'])) {
+                    $bestPage = $page;
+                    break;
+                }
+                $bestPage ??= $page;
             }
-            if (is_array($value)) {
-                foreach (['url', 'src', 'href', 'profile_picture_url', 'avatar_url'] as $nestedKey) {
-                    $nested = $value[$nestedKey] ?? null;
-                    if (is_string($nested)) {
-                        $nested = trim($nested);
-                        if ($nested !== '' && str_starts_with($nested, 'http')) {
-                            return $nested;
+            if (is_array($bestPage)) {
+                array_unshift($sources, $bestPage);
+            }
+        }
+
+        foreach ($sources as $source) {
+            foreach (['profile_picture_url', 'picture_url', 'avatar_url', 'picture'] as $key) {
+                $value = $source[$key] ?? null;
+                if (is_string($value)) {
+                    $value = trim($value);
+                    if ($value !== '' && str_starts_with($value, 'http')) {
+                        return $value;
+                    }
+                }
+                if (is_array($value)) {
+                    foreach (['url', 'src', 'href', 'profile_picture_url', 'avatar_url'] as $nestedKey) {
+                        $nested = $value[$nestedKey] ?? null;
+                        if (is_string($nested)) {
+                            $nested = trim($nested);
+                            if ($nested !== '' && str_starts_with($nested, 'http')) {
+                                return $nested;
+                            }
                         }
                     }
                 }

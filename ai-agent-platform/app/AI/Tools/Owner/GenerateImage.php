@@ -9,8 +9,8 @@ use App\AI\Tools\AgentTool;
 use App\Exceptions\InsufficientWalletException;
 use App\Models\AgentImageJob;
 use App\Models\Business;
-use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Channels\ChannelLogoResolver;
 use App\Services\Wallet\WalletService;
 use Throwable;
 
@@ -20,6 +20,7 @@ class GenerateImage implements AgentTool
         private FalImageProvider $images,
         private WalletService $wallets,
         private ImageModelCatalog $catalog,
+        private ChannelLogoResolver $logos,
     ) {}
 
     public function name(): string
@@ -81,6 +82,12 @@ class GenerateImage implements AgentTool
             return ['error' => 'Image generation is misconfigured.'];
         }
 
+        $platform = isset($context['platform']) ? (string) $context['platform'] : null;
+        $logoPrefix = $this->logos->mandatoryPromptPrefix($business, $platform);
+        if ($logoPrefix === null) {
+            return $this->logos->missingLogoError();
+        }
+
         try {
             $this->wallets->authorizeBusinessAi($business, $priceDa);
         } catch (InsufficientWalletException $e) {
@@ -94,22 +101,8 @@ class GenerateImage implements AgentTool
 
         $ownerBrief = trim((string) ($context['owner_brief'] ?? ''));
         $fullPrompt = ImageOnImageLanguage::enrich($business, $prompt, $ownerBrief !== '' ? $ownerBrief : null);
-        $logoUrl = SocialAccount::query()
-            ->where('business_id', $business->id)
-            ->where('provider', 'socialapi')
-            ->where('platform', '!=', 'simulator')
-            ->where(function ($q) {
-                $q->whereNull('status')->orWhere('status', '!=', 'disconnected');
-            })
-            ->with('logoAsset')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (SocialAccount $a) => $a->resolvedLogoUrl())
-            ->first(fn ($u) => is_string($u) && $u !== '');
-        if (is_string($logoUrl) && $logoUrl !== '' && stripos($fullPrompt, 'PAGE_LOGO') === false) {
-            $fullPrompt = 'PAGE_LOGO: '.$logoUrl
-                .' — when a brand mark helps, discreetly include this page logo/colors; never invent a different logo. '
-                .$fullPrompt;
+        if (stripos($fullPrompt, 'PAGE_LOGO') === false) {
+            $fullPrompt = $logoPrefix.' '.$fullPrompt;
         }
 
         try {

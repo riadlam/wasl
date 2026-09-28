@@ -13,6 +13,7 @@ export const queryKeys = {
     agent: ['agent'],
     agentChats: ['agent', 'chats'],
     agentChat: (chatId) => ['agent', 'chat', chatId ?? 'none'],
+    agentBehaviorRules: ['agent', 'behavior-rules'],
     profileInterview: ['agent', 'profile-interview'],
     customerAi: ['customer-ai-settings'],
     mcpTokens: ['mcp-tokens'],

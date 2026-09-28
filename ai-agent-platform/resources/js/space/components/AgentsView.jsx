@@ -10,6 +10,7 @@ import { api } from '../api';
 import { useSpace } from '../context';
 import { queryKeys } from '../query';
 import AgentMark from './AgentMark';
+import BehaviorRulesPanel from './BehaviorRulesPanel';
 import gptIcon from '../icons/chatgpt.svg';
 import geminiIcon from '../icons/gemini.svg';
 import fluxIcon from '../icons/flux.svg';
@@ -605,6 +606,7 @@ export default function AgentsView() {
 
             <AgentChatSidebar
                 canManage={canManage}
+                canView={canView}
                 chatBusy={chatBusy}
                 chatList={chatList}
                 chatsLoading={chatsQuery.isLoading}
@@ -699,6 +701,7 @@ const sidebarListMotion = {
 
 function AgentChatSidebar({
     canManage,
+    canView,
     chatBusy,
     chatList,
     chatsLoading,
@@ -714,7 +717,7 @@ function AgentChatSidebar({
     const listTransition = reduceMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' };
 
     return (
-        <aside className="flex w-[14rem] shrink-0 flex-col border-r border-line/80 bg-bubble/35 sm:w-[15rem]">
+        <aside className="flex w-[15rem] shrink-0 flex-col border-r border-line/80 bg-bubble/35 sm:w-[16.5rem]">
             <div className="flex items-center justify-between gap-2 px-3 py-2.5">
                 <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">Chats</p>
                 {canManage && (
@@ -735,7 +738,7 @@ function AgentChatSidebar({
                     </button>
                 )}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1">
                 {chatsLoading ? (
                     <p className="px-2 py-4 text-center text-[12px] text-muted">Loading…</p>
                 ) : showEmpty ? (
@@ -790,6 +793,7 @@ function AgentChatSidebar({
                     </ul>
                 )}
             </div>
+            {canView && <BehaviorRulesPanel canManage={canManage} />}
         </aside>
     );
 }

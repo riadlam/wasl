@@ -136,14 +136,14 @@ class ImageOnImageLanguage
 
     private static function noOverlayGuard(): string
     {
-        return 'Clean social-media marketing photo, high quality, natural lighting, no gibberish text, no fake logos, no watermarks, no UI chrome. Prefer photoreal product or lifestyle visuals without English headline overlays unless typography is explicitly requested. NEVER render owner instructions, briefing chat, or meta lines like "make new posts" on the image.';
+        return 'Clean social-media marketing photo, high quality, natural lighting, no gibberish text, no invented logos, no UI chrome. The mandatory PAGE_LOGO mark (when present in the prompt) MUST appear as a small corner brand mark. Prefer photoreal product or lifestyle visuals without English headline overlays unless typography is explicitly requested. NEVER render owner instructions, briefing chat, or meta lines like "make new posts" on the image.';
     }
 
     private static function darijaTypographyBlock(string $brief, string $prompt): string
     {
         $hints = self::phraseHints($brief, $prompt);
 
-        return 'ON-IMAGE LANGUAGE (MANDATORY): This is an Algerian shop creative. Any promotional headline or slogan ON the image MUST be Algerian Darija written in correct Arabic script (not English sentences, not arabizi/Latin Darija). Brand or product names may stay Latin next to the Darija. Render sharp, readable Arabic letters with high contrast; no gibberish, no fake logos, no watermarks, no UI chrome. FORBIDDEN on-image text: owner briefing, "make posts", "same concept", campaign meta, chat instructions.'
+        return 'ON-IMAGE LANGUAGE (MANDATORY): This is an Algerian shop creative. Any promotional headline or slogan ON the image MUST be Algerian Darija written in correct Arabic script (not English sentences, not arabizi/Latin Darija). Brand or product names may stay Latin next to the Darija. Render sharp, readable Arabic letters with high contrast; no gibberish, no invented logos, no UI chrome. The mandatory PAGE_LOGO mark (when present in the prompt) MUST appear as a small corner brand mark. FORBIDDEN on-image text: owner briefing, "make posts", "same concept", campaign meta, chat instructions.'
             .($hints !== '' ? ' Suggested Darija/brand lines to render: '.$hints.'.' : ' Invent short natural Darija promo lines in Arabic script that match the SUBJECT of the image (product/service), never campaign instructions.');
     }
 
@@ -151,7 +151,7 @@ class ImageOnImageLanguage
     {
         $hints = self::phraseHints($brief, $prompt);
 
-        return 'ON-IMAGE LANGUAGE (MANDATORY): This is a French-language shop creative. Any promotional headline or slogan ON the image MUST be clear French (not English). Brand names may stay as written. Sharp readable letters, high contrast; no gibberish, no fake logos, no watermarks, no UI chrome. FORBIDDEN: owner briefing or campaign-meta instructions as headlines.'
+        return 'ON-IMAGE LANGUAGE (MANDATORY): This is a French-language shop creative. Any promotional headline or slogan ON the image MUST be clear French (not English). Brand names may stay as written. Sharp readable letters, high contrast; no gibberish, no invented logos, no UI chrome. The mandatory PAGE_LOGO mark (when present in the prompt) MUST appear as a small corner brand mark. FORBIDDEN: owner briefing or campaign-meta instructions as headlines.'
             .($hints !== '' ? ' Suggested French/brand lines to render: '.$hints.'.' : ' Invent short natural French promo lines that match the subject.');
     }
 

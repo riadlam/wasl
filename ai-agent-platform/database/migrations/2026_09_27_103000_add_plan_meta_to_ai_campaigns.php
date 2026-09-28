@@ -9,14 +9,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('ai_campaigns', function (Blueprint $table) {
-            $table->json('plan_meta')->nullable()->after('warnings');
+            if (! Schema::hasColumn('ai_campaigns', 'plan_meta')) {
+                $table->json('plan_meta')->nullable()->after('warnings');
+            }
         });
     }
 
     public function down(): void
     {
         Schema::table('ai_campaigns', function (Blueprint $table) {
-            $table->dropColumn('plan_meta');
+            if (Schema::hasColumn('ai_campaigns', 'plan_meta')) {
+                $table->dropColumn('plan_meta');
+            }
         });
     }
 };

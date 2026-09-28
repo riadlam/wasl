@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\TenantController;
+use App\Http\Controllers\Api\AgentBehaviorRuleController;
 use App\Http\Controllers\Api\AgentController;
 use App\Http\Controllers\Api\BusinessController;
 use App\Http\Controllers\Api\ConversationController;
@@ -74,6 +75,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/agent', [AgentController::class, 'show'])->middleware('permission:agents.view');
         Route::put('/agent', [AgentController::class, 'update'])->middleware('permission:agents.manage');
+        Route::get('/agent/behavior-rules', [AgentBehaviorRuleController::class, 'index'])->middleware('permission:agents.view');
+        Route::post('/agent/behavior-rules', [AgentBehaviorRuleController::class, 'store'])->middleware('permission:agents.manage');
+        Route::put('/agent/behavior-rules/{id}', [AgentBehaviorRuleController::class, 'update'])->middleware('permission:agents.manage');
+        Route::delete('/agent/behavior-rules/{id}', [AgentBehaviorRuleController::class, 'destroy'])->middleware('permission:agents.manage');
         Route::get('/agent/image-models', [AgentController::class, 'imageModels'])->middleware('permission:agents.view');
         Route::patch('/agent/image-model', [AgentController::class, 'updateImageModel'])->middleware('permission:agents.manage');
         Route::get('/agent/llm-models', [AgentController::class, 'llmModels'])->middleware('permission:agents.view');

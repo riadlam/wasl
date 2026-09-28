@@ -20,6 +20,7 @@ use App\Models\AiCampaignSlot;
 use App\Models\Business;
 use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Channels\ChannelLogoResolver;
 use App\Services\Wallet\AiTaskBillingService;
 use App\Services\Wallet\WalletService;
 use Illuminate\Support\Facades\Http;
@@ -41,6 +42,7 @@ class CampaignCreativeService
         private CampaignMcpGateway $mcp,
         private CampaignVerifiedProductFacts $verifiedProducts,
         private CaptionApprover $captionApprover,
+        private ChannelLogoResolver $logos,
     ) {}
 
     /**
@@ -523,43 +525,11 @@ TEXT;
     }
 
     /**
-     * Hint for image_prompt / draft: use connected page logo when available.
+     * Mandatory PAGE_LOGO hint for image_prompt / draft when a channel logo exists.
      */
     private function channelLogoHint(Business $business, string $platform): string
     {
-        $account = SocialAccount::query()
-            ->where('business_id', $business->id)
-            ->where('provider', 'socialapi')
-            ->where('platform', $platform)
-            ->where(function ($q) {
-                $q->whereNull('status')->orWhere('status', '!=', 'disconnected');
-            })
-            ->with('logoAsset')
-            ->orderByDesc('id')
-            ->first();
-
-        if (! $account) {
-            $account = SocialAccount::query()
-                ->where('business_id', $business->id)
-                ->where('provider', 'socialapi')
-                ->where('platform', '!=', 'simulator')
-                ->where(function ($q) {
-                    $q->whereNull('status')->orWhere('status', '!=', 'disconnected');
-                })
-                ->with('logoAsset')
-                ->orderByDesc('id')
-                ->first();
-        }
-
-        $url = $account?->resolvedLogoUrl();
-        if (! is_string($url) || $url === '') {
-            return '';
-        }
-
-        $source = $account->hasCustomLogo() ? 'shop-uploaded page logo' : 'SocialAPI page profile picture';
-
-        return 'PAGE_LOGO ('.$source.'): '.$url
-            ."\nIn image_prompt, when a brand mark helps, discreetly include this page's logo/colors — do not invent a different logo. Prefer small corner watermark-style placement, never covering the product.";
+        return $this->logos->mandatoryPromptPrefix($business, $platform) ?? '';
     }
 
     /**
@@ -589,6 +559,21 @@ TEXT;
             'label' => $model['label'] ?? $modelKey,
         ]);
         $priceDa = (float) $model['price_da'];
+
+        $logoHint = $this->channelLogoHint($business, $platform);
+        if ($logoHint === '') {
+            $err = $this->logos->missingLogoError();
+
+            return [
+                'asset' => null,
+                'image_url' => null,
+                'image_size' => $size,
+                'image_job_id' => null,
+                'image_error' => $err['error'],
+                'model_key' => $modelKey,
+            ];
+        }
+
         try {
             $this->wallets->authorizeBusinessAi($business, $priceDa);
         } catch (InsufficientWalletException $e) {
@@ -607,8 +592,7 @@ TEXT;
             $imagePrompt,
             $ownerBrief !== null && $ownerBrief !== '' ? $ownerBrief : null,
         );
-        $logoHint = $this->channelLogoHint($business, $platform);
-        if ($logoHint !== '' && stripos($fullPrompt, 'PAGE_LOGO') === false) {
+        if (stripos($fullPrompt, 'PAGE_LOGO') === false) {
             $fullPrompt = $logoHint.' '.$fullPrompt;
         }
 

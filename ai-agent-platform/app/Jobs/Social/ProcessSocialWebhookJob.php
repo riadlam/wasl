@@ -170,8 +170,23 @@ class ProcessSocialWebhookJob implements ShouldQueue
         $business->loadMissing('agent');
         $agentOn = $runAgent && $conversation->ai_enabled && (! $business->agent || $business->agent->ai_enabled);
         $postId = null;
+        $commentId = null;
         if ($type === 'comment') {
             $postId = $this->extractPlatformPostId($data);
+            $commentId = app(\App\Services\ConversationService::class)->extractCommentId($data);
+
+            $guard = app(\App\Services\Comments\CommentReplyGuard::class);
+            if (! $guard->shouldProcessInboundComment(
+                $business,
+                $account,
+                $data,
+                (string) ($text ?? ''),
+                $postId,
+                $commentId,
+            )) {
+                // Persist for inbox history but NEVER auto-reply to page echoes / duplicates.
+                return;
+            }
         }
 
         $classify = $agentOn && app(\App\Services\WorkflowService::class)->hasActiveLeadWorkflows($business);

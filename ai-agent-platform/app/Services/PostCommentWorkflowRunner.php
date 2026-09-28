@@ -7,7 +7,9 @@ use App\Jobs\Social\SendFixedCommentReplyJob;
 use App\Jobs\Social\SendPrivateReplyJob;
 use App\Models\Business;
 use App\Models\Message;
+use App\Models\SocialAccount;
 use App\Models\Workflow;
+use App\Services\Comments\CommentReplyGuard;
 use Illuminate\Support\Facades\Bus;
 
 /**
@@ -79,6 +81,28 @@ class PostCommentWorkflowRunner
         $plan = $this->plan($business, $socialAccountId, $platformPostId);
         $commentsEnabled = (bool) $business->agent?->auto_reply_comments;
 
+        $meta = is_array($message->metadata) ? $message->metadata : [];
+        $commentId = app(ConversationService::class)->extractCommentId($meta);
+        $guard = app(CommentReplyGuard::class);
+        $account = $message->conversation?->socialAccount
+            ?? SocialAccount::query()->find($socialAccountId);
+
+        // Second-line defense (in case webhook path missed an echo).
+        if (
+            $message->type === 'comment'
+            && $account
+            && ! $guard->shouldProcessInboundComment(
+                $business,
+                $account,
+                $meta,
+                (string) $message->text,
+                $platformPostId,
+                $commentId,
+            )
+        ) {
+            return;
+        }
+
         $agentComment = $plan['agent_comment']
             && $agentOn
             && $commentsEnabled;
@@ -87,6 +111,11 @@ class PostCommentWorkflowRunner
         $fixedComment = $plan['fixed_comment'] && $runAgent && $conversationAiEnabled;
 
         if ($dmRun || $agentComment || ($message->type === 'comment' && $classify)) {
+            // Claim this comment before queueing so parallel jobs cannot double-fire.
+            if ($agentComment || $fixedComment) {
+                $guard->markReplied((int) $business->id, $commentId);
+                $guard->hitPostRate((int) $business->id, $platformPostId);
+            }
             ProcessIncomingMessageJob::dispatchFor($message);
         }
 
@@ -103,6 +132,7 @@ class PostCommentWorkflowRunner
             && $agentOn
             && $commentsEnabled
             && $platformPostId
+            && $agentComment // only with a real agent public reply path, not echoes
         ) {
             Bus::dispatch(new SendPrivateReplyJob($message->id, $plan['workflow']?->id));
         }

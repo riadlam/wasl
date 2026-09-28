@@ -590,6 +590,17 @@ class ConversationService
             ], $metadata)),
         ]);
 
+        if ($kind === 'comment_reply') {
+            app(\App\Services\Comments\CommentReplyGuard::class)->markReplied(
+                (int) $conversation->business_id,
+                $this->extractCommentId($inboundMeta),
+            );
+            app(\App\Services\Comments\CommentReplyGuard::class)->hitPostRate(
+                (int) $conversation->business_id,
+                $this->extractPostId($inboundMeta),
+            );
+        }
+
         Bus::dispatch(new SendSocialMessageJob($message->id));
 
         return $message;

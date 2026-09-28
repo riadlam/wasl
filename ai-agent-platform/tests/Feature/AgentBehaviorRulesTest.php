@@ -78,4 +78,21 @@ class AgentBehaviorRulesTest extends TestCase
         $this->assertStringContainsString('Offer cash on delivery first', $customerPrompt);
         $this->assertStringContainsString('Never invent discounts', $customerPrompt);
     }
+
+    public function test_behavior_rules_block_includes_must_not_for_campaign_paths(): void
+    {
+        ['business' => $business] = $this->makeShop();
+
+        AgentBehaviorRule::query()->create([
+            'business_id' => $business->id,
+            'polarity' => AgentBehaviorRule::POLARITY_MUST_NOT,
+            'body' => 'Do not mention competitor brands',
+            'sort_order' => 1,
+        ]);
+
+        $block = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+        $this->assertStringContainsString('HARD BUSINESS RULES', $block);
+        $this->assertStringContainsString('MUST NOT', $block);
+        $this->assertStringContainsString('Do not mention competitor brands', $block);
+    }
 }

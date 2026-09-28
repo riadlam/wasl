@@ -42,6 +42,7 @@ Rules:
 - Language: shop reply language (usually Algerian Darija Arabic script) unless focus says otherwise.
 - Posts: hook + blank line + 2 short body lines + CTA. Exactly 3 niche hashtags in hashtags array (not inside caption). 1–3 emojis.
 - Stories: under 80 characters, at most 2 hashtags.
+- HARD BUSINESS RULES from the shop (Should / Must not cards), when provided, OVERRIDE style preferences — never violate MUST NOT.
 - Return ONLY JSON:
   {"title":"...","caption":"...","hashtags":["#a","#b","#c"],"image_prompt":"English scene or short note"}
 """
@@ -159,6 +160,7 @@ class CampaignSlotAgent:
         image_description: str = "",
         model: str | None = None,
         correlation_id: str = "",
+        hard_business_rules: str = "",
     ) -> dict[str, Any]:
         business_id = int(tenant.get("business_id") or 0)
         with activity().turn(
@@ -175,12 +177,17 @@ class CampaignSlotAgent:
                     "kind": kind,
                     "has_image": bool(image_data_url),
                     "focus": (focus or "")[:600],
+                    "has_hard_rules": bool((hard_business_rules or "").strip()),
                 },
             )
             tools = self.runtime.filter_tools(
                 self.runtime.tools_for_surface("campaign_draft_slot", OWNER_TOOLS),
                 self.TOOL_ALLOWLIST,
             )
+            rules = (hard_business_rules or "").strip()
+            system = DRAFT_SYSTEM
+            if rules:
+                system = f"{DRAFT_SYSTEM}\n\n{rules}\n"
             user_payload: dict[str, Any] = {
                 "task": "Draft THIS campaign slot only. Return JSON only.",
                 "platform": platform,
@@ -190,6 +197,7 @@ class CampaignSlotAgent:
                 "slot_offer": slot_offer,
                 "slot_angle": slot_angle,
                 "forbidden_hooks": forbidden_hooks or "(none)",
+                "hard_business_rules": rules or "(none)",
                 "campaign_focus": (focus or "")[:6000],
                 "this_image_description": (image_description or "")[:2000],
             }
@@ -203,7 +211,7 @@ class CampaignSlotAgent:
                 user_content = json.dumps(user_payload, ensure_ascii=False)
 
             messages = [
-                {"role": "system", "content": DRAFT_SYSTEM},
+                {"role": "system", "content": system},
                 {"role": "user", "content": user_content},
             ]
             loop = await self.runtime.run(

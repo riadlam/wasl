@@ -146,6 +146,7 @@ class CampaignCreativeService
         $skillBlock = $skills->promptFor('campaign', $business, ['reply_language' => $language]);
         $verifiedBlock = $this->verifiedProducts->block($business, $focus, $traceId);
         $verifiedEmpty = str_contains($verifiedBlock, '(none matched in catalog)');
+        $behaviorBlock = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
 
         CampaignTrace::info('campaigns.draft.start', [
             'trace_id' => $traceId,
@@ -162,6 +163,7 @@ class CampaignCreativeService
             'context_skipped' => $context === '',
             'verified_empty' => $verifiedEmpty,
             'skills_chars' => mb_strlen($skillBlock),
+            'has_hard_rules' => $behaviorBlock !== '',
         ]);
 
         $system = <<<TEXT
@@ -180,6 +182,10 @@ When done, reply with JSON only: {"title":"...","caption":"...","hashtags":["#a"
 
 {$skillBlock}
 TEXT;
+
+        if ($behaviorBlock !== '') {
+            $system .= "\n\n".$behaviorBlock."\n";
+        }
 
         $userText = "Platform: {$platform}\nSlot: {$kind}\nCampaign: {$span} · {$volume}\nFocus: ".($focus !== '' ? $focus : '(none)')."\n{$verifiedBlock}\nRecent posts / context:\n".($context !== '' ? $context : '(none)');
         $logoHint = $this->channelLogoHint($business, $platform);
@@ -447,6 +453,10 @@ TEXT;
         $system = 'You are CampaignCreativeAgent rewriting a campaign TEASE caption after CaptionApprover feedback. '
             .'Return JSON only: {"title":"...","caption":"...","hashtags":["#a","#b","#c"],"image_prompt":"..."}. '
             .'Do not invent prices or offer mechanics. Keep shop language.';
+        $behaviorBlock = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+        if ($behaviorBlock !== '') {
+            $system .= "\n\n".$behaviorBlock;
+        }
         $user = "Focus/brief:\n{$focus}\n\nPrevious caption:\n{$previous}\n\nApprover feedback:\n{$feedback}\n\n"
             ."Previous title: {$title}\nPrevious hashtags: ".implode(' ', $hashtags)."\nImage prompt: {$imagePrompt}";
 

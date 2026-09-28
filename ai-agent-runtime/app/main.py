@@ -194,6 +194,7 @@ async def campaign_tease(
                 kind=body.kind or "post",
                 model=body.llm_model,
                 correlation_id=str(tenant.get("correlation_id") or ""),
+                hard_business_rules=body.hard_business_rules or "",
             )
             return CampaignTeaseResponse(**result)
         except Exception as exc:
@@ -229,6 +230,7 @@ async def campaign_enhance(
                 forbidden_hooks=body.forbidden_hooks or "",
                 slot_idea=body.slot_idea or "",
                 slot_offer=body.slot_offer or "",
+                hard_business_rules=body.hard_business_rules or "",
             )
             return CampaignEnhanceResponse(**result)
         except Exception as exc:
@@ -293,6 +295,7 @@ async def campaign_draft_slot(
                 image_description=body.image_description or "",
                 model=body.llm_model,
                 correlation_id=str(tenant.get("correlation_id") or ""),
+                hard_business_rules=body.hard_business_rules or "",
             )
             return CampaignDraftSlotResponse(**result)
         except Exception as exc:

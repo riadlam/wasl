@@ -45,6 +45,7 @@ class CampaignTeaseAgent:
         kind: str = "post",
         model: str | None = None,
         correlation_id: str = "",
+        hard_business_rules: str = "",
     ) -> dict[str, Any]:
         business_id = int(tenant.get("business_id") or 0)
         with activity().turn(
@@ -53,7 +54,15 @@ class CampaignTeaseAgent:
             correlation_id=correlation_id,
             extra={"surface": "campaign_tease", "platform": platform, "kind": kind},
         ):
-            activity().input("campaign tease start", {"focus": focus[:1200], "platform": platform, "kind": kind})
+            activity().input(
+                "campaign tease start",
+                {
+                    "focus": focus[:1200],
+                    "platform": platform,
+                    "kind": kind,
+                    "has_hard_rules": bool((hard_business_rules or "").strip()),
+                },
+            )
 
             # Fast path: one RAG brand fetch, then Writer→Approver (max 2) with cached brand.
             # Never call Laravel get_business_context here — it was hanging ~90s per round.
@@ -74,13 +83,23 @@ class CampaignTeaseAgent:
             except Exception as exc:
                 logger.info("campaign tease brand RAG skipped: %s", exc)
 
+            rules = (hard_business_rules or "").strip()
+            if rules:
+                brand_context = (brand_context + "\n\n" + rules).strip() if brand_context else rules
+
             brief = (
                 "AI CAMPAIGN TEASE — produce ONE sample caption showing what scheduled posts "
                 "will look like when this campaign runs. Owner text below is INTENT/DIRECTION only "
                 "(topic, style, games). NEVER print briefing meta or 'make new posts / same concept' "
-                "as the caption. Match THIS shop's real category from brand RAG.\n\n"
-                f"{focus}"
+                "as the caption. Match THIS shop's real category from brand RAG.\n"
             )
+            if rules:
+                brief += (
+                    "HARD BUSINESS RULES (Should / Must not) OVERRIDE style preferences — "
+                    "never violate MUST NOT.\n\n"
+                )
+            brief += f"{focus}"
+
             session: dict[str, Any] = {"state": {}}
             loop_result = await self.caption_loop.run(
                 business_id=business_id,

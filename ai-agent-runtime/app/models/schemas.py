@@ -157,6 +157,7 @@ class CampaignTeaseRequest(BaseModel):
     platform: str = "facebook"
     kind: str = "post"
     llm_model: str | None = None
+    hard_business_rules: str = ""
 
 
 class CampaignTeaseResponse(BaseModel):
@@ -186,6 +187,7 @@ class CampaignEnhanceRequest(BaseModel):
     forbidden_hooks: str = ""
     slot_idea: str = ""
     slot_offer: str = ""
+    hard_business_rules: str = ""
 
 
 class CampaignEnhanceResponse(BaseModel):
@@ -235,6 +237,7 @@ class CampaignDraftSlotRequest(BaseModel):
     image_data_url: str | None = None
     image_description: str = ""
     llm_model: str | None = None
+    hard_business_rules: str = ""
 
 
 class CampaignDraftSlotResponse(BaseModel):

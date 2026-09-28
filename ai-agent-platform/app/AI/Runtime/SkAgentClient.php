@@ -388,6 +388,8 @@ class SkAgentClient
         ?string $llmModel = null,
     ): array {
         try {
+            $hardRules = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+
             $response = Http::timeout((int) config('ai_runtime.timeout', 200))
                 ->withHeaders($this->headers($business, $actor->id))
                 ->post(config('ai_runtime.url').'/v1/campaigns/tease', [
@@ -395,6 +397,7 @@ class SkAgentClient
                     'platform' => $platform,
                     'kind' => $kind,
                     'llm_model' => $llmModel,
+                    'hard_business_rules' => $hardRules,
                 ]);
 
             if (! $response->successful()) {
@@ -503,6 +506,8 @@ class SkAgentClient
         string $slotOffer = '',
     ): array {
         try {
+            $hardRules = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+
             $response = Http::timeout((int) config('ai_runtime.timeout', 200))
                 ->withHeaders($this->headers($business, $actor->id))
                 ->post(config('ai_runtime.url').'/v1/campaigns/enhance', [
@@ -517,6 +522,7 @@ class SkAgentClient
                     'forbidden_hooks' => $forbiddenHooks,
                     'slot_idea' => $slotIdea,
                     'slot_offer' => $slotOffer,
+                    'hard_business_rules' => $hardRules,
                 ]);
 
             if (! $response->successful()) {
@@ -679,6 +685,8 @@ class SkAgentClient
         ?string $llmModel = null,
     ): array {
         try {
+            $hardRules = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+
             $response = Http::timeout((int) config('ai_runtime.timeout', 200))
                 ->withHeaders($this->headers($business, $actor->id))
                 ->post(config('ai_runtime.url').'/v1/campaigns/draft_slot', [
@@ -693,6 +701,7 @@ class SkAgentClient
                     'image_data_url' => $imageDataUrl,
                     'image_description' => $imageDescription,
                     'llm_model' => $llmModel,
+                    'hard_business_rules' => $hardRules,
                 ]);
 
             if (! $response->successful()) {

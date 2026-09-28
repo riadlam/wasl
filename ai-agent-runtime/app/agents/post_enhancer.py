@@ -27,6 +27,7 @@ Rules:
 - Stay faithful to campaign focus / brief / process YES-NO decisions.
 - Do not invent products, prices, or stock.
 - Language: match shop reply language (usually Algerian Darija Arabic script) unless focus says otherwise.
+- HARD BUSINESS RULES from the shop (Should / Must not cards), when provided, OVERRIDE style preferences — never violate MUST NOT.
 - Return ONLY valid JSON with keys:
   title: string (short owner-facing idea, 4-10 words)
   caption: string (publishable caption, no hashtag dump inside)
@@ -75,6 +76,7 @@ class PostEnhancerAgent:
         forbidden_hooks: str = "",
         slot_idea: str = "",
         slot_offer: str = "",
+        hard_business_rules: str = "",
     ) -> dict[str, Any]:
         business_id = int(tenant.get("business_id") or 0)
         with activity().turn(
@@ -93,6 +95,7 @@ class PostEnhancerAgent:
                     "platform": platform,
                     "kind": kind,
                     "slot_idea": (slot_idea or "")[:120],
+                    "has_hard_rules": bool((hard_business_rules or "").strip()),
                 },
             )
             if not prev:
@@ -103,6 +106,10 @@ class PostEnhancerAgent:
                 self.TOOL_ALLOWLIST,
             )
             tags = previous_hashtags or []
+            rules = (hard_business_rules or "").strip()
+            system = ENHANCE_SYSTEM
+            if rules:
+                system = f"{ENHANCE_SYSTEM}\n\n{rules}\n"
             user_payload = {
                 "task": "Enhance this campaign post for regenerate. Return JSON only.",
                 "platform": platform,
@@ -112,6 +119,7 @@ class PostEnhancerAgent:
                 "slot_idea": slot_idea or previous_title or "",
                 "slot_offer": slot_offer or "",
                 "forbidden_hooks": forbidden_hooks or "(none)",
+                "hard_business_rules": rules or "(none)",
                 "previous": {
                     "title": previous_title or "",
                     "caption": prev[:4000],
@@ -119,7 +127,7 @@ class PostEnhancerAgent:
                 },
             }
             messages = [
-                {"role": "system", "content": ENHANCE_SYSTEM},
+                {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
             ]
             loop = await self.runtime.run(

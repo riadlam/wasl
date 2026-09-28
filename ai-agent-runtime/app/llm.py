@@ -10,6 +10,22 @@ from app.middleware.agent_activity import activity
 
 logger = logging.getLogger(__name__)
 
+# Laravel catalog keys → OpenRouter/Fal model IDs (safety net if PHP forgets to resolve).
+_MODEL_ALIASES: dict[str, str] = {
+    "claude_sonnet": "anthropic/claude-sonnet-4.5",
+    "gpt": "openai/gpt-5",
+    "gemini": "google/gemini-2.5-flash",
+}
+
+
+def resolve_provider_model(model: str | None, default: str | None = None) -> str | None:
+    raw = (model or "").strip() or (default or "").strip() or None
+    if not raw:
+        return None
+    if "/" in raw:
+        return raw
+    return _MODEL_ALIASES.get(raw, raw)
+
 
 def _fal_headers(api_key: str) -> dict[str, str]:
     """Fal OpenRouter expects Authorization: Key <FAL_KEY>."""
@@ -62,7 +78,7 @@ class LlmClient:
         temperature: float = 0.4,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
-            "model": model or self.settings.llm_model,
+            "model": resolve_provider_model(model, self.settings.llm_model) or self.settings.llm_model,
             "messages": messages,
             "temperature": temperature,
         }

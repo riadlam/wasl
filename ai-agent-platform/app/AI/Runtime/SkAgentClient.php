@@ -54,7 +54,7 @@ class SkAgentClient
             ], $attachments),
             'history' => $history,
             'system_prompt' => $systemPrompt,
-            'llm_model' => $llmModel,
+            'llm_model' => $this->resolveProviderModel($llmModel),
             'tool_allowlist' => $toolAllowlist,
         ];
 
@@ -92,7 +92,7 @@ class SkAgentClient
             'media_type' => $inbound->media_type,
             'history' => $history,
             'system_prompt' => $systemPrompt,
-            'llm_model' => $llmModel,
+            'llm_model' => $this->resolveProviderModel($llmModel),
             'allow_reply' => $allowReply,
             'customer_id' => $conversation?->customer_id,
             'social_account_id' => $conversation?->social_account_id,
@@ -120,7 +120,7 @@ class SkAgentClient
                     'business_id' => $business->id,
                     'social_account_id' => $socialAccountId,
                     'corpus' => $corpus,
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                 ]);
 
             if (! $response->successful()) {
@@ -300,7 +300,7 @@ class SkAgentClient
                         'role' => (($row['role'] ?? '') === 'assistant') ? 'assistant' : 'user',
                         'content' => self::asText($row['content'] ?? ''),
                     ], $history)),
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                 ]);
 
             if (! $response->successful()) {
@@ -396,7 +396,7 @@ class SkAgentClient
                     'focus' => $focus,
                     'platform' => $platform,
                     'kind' => $kind,
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                     'hard_business_rules' => $hardRules,
                 ]);
 
@@ -518,7 +518,7 @@ class SkAgentClient
                     'platform' => $platform,
                     'kind' => $kind,
                     'content_mode' => $contentMode,
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                     'forbidden_hooks' => $forbiddenHooks,
                     'slot_idea' => $slotIdea,
                     'slot_offer' => $slotOffer,
@@ -617,7 +617,7 @@ class SkAgentClient
                     'image_analyses' => array_values($imageAnalyses),
                     'understanding' => $understanding,
                     'product_focus' => $productFocus,
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                 ]);
 
             if (! $response->successful()) {
@@ -700,7 +700,7 @@ class SkAgentClient
                     'forbidden_hooks' => $forbiddenHooks,
                     'image_data_url' => $imageDataUrl,
                     'image_description' => $imageDescription,
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                     'hard_business_rules' => $hardRules,
                 ]);
 
@@ -823,7 +823,7 @@ class SkAgentClient
                         'label' => (string) ($row['label'] ?? ''),
                     ], $imageUrls)),
                     'channel_ids' => array_values(array_map('intval', $channelIds)),
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                 ]);
 
             if (! $response->successful()) {
@@ -930,7 +930,7 @@ class SkAgentClient
                         'url' => (string) ($row['url'] ?? ''),
                         'label' => (string) ($row['label'] ?? ''),
                     ], $imageUrls)),
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                     'reply_language' => $replyLanguage,
                 ]);
 
@@ -1075,7 +1075,7 @@ class SkAgentClient
                 ->post(config('ai_runtime.url').'/v1/translation/translate', [
                     'texts' => $clean,
                     'language_hint' => $languageHint,
-                    'llm_model' => $llmModel,
+                    'llm_model' => $this->resolveProviderModel($llmModel),
                 ]);
 
             if (! $response->successful()) {
@@ -1120,6 +1120,23 @@ class SkAgentClient
 
             return $empty;
         }
+    }
+
+    /**
+     * Map catalog keys (claude_sonnet) to OpenRouter/Fal model IDs.
+     * Caller may already pass a provider id (anthropic/claude-...); leave those alone.
+     */
+    private function resolveProviderModel(?string $llmModel): ?string
+    {
+        if ($llmModel === null || trim($llmModel) === '') {
+            return $llmModel;
+        }
+        $key = trim($llmModel);
+        if (str_contains($key, '/')) {
+            return $key;
+        }
+
+        return app(\App\AI\LlmModels\LlmModelCatalog::class)->resolve($key)['model'] ?? $key;
     }
 
     /**

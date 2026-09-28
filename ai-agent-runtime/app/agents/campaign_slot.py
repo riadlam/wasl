@@ -354,12 +354,17 @@ class CampaignSlotAgent:
             "forbidden -",
             "let me think",
             "i need to",
+            "i see the catalog",
+            "owner briefing says",
+            "looking at the recent posts",
+            "based on the campaign brief",
             "as an ai",
             "campaignslot",
             "return only json",
             "tool_call",
             "knowledge_search",
             "ask_identity_agent",
+            "meaning i should write",
         )
         return any(n in lower for n in needles)
 

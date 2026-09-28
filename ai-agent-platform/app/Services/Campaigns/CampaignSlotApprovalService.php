@@ -539,17 +539,24 @@ class CampaignSlotApprovalService
 
         $seedCaption = trim((string) $slot->caption);
         $seedTitle = trim((string) ($slot->title ?? ''));
+        // Never enhance leaked agent-thinking / internal prompt text — cold re-draft instead.
+        if ($seedCaption !== '' && \App\Support\MerchantSafeMessage::looksLikeInternalCaption($seedCaption)) {
+            $seedCaption = '';
+            $seedTitle = '';
+        }
         // Stash seed on campaign plan_meta so ProcessCampaignSlot can enhance (not cold re-draft).
+        $planMeta = is_array($campaign->plan_meta) ? $campaign->plan_meta : [];
+        $planMeta['regen_seeds'] = is_array($planMeta['regen_seeds'] ?? null) ? $planMeta['regen_seeds'] : [];
         if ($seedCaption !== '') {
-            $planMeta = is_array($campaign->plan_meta) ? $campaign->plan_meta : [];
-            $planMeta['regen_seeds'] = is_array($planMeta['regen_seeds'] ?? null) ? $planMeta['regen_seeds'] : [];
             $planMeta['regen_seeds'][(string) $slot->id] = [
                 'caption' => $seedCaption,
                 'title' => $seedTitle,
                 'at' => now()->toIso8601String(),
             ];
-            $campaign->update(['plan_meta' => $planMeta]);
+        } else {
+            unset($planMeta['regen_seeds'][(string) $slot->id]);
         }
+        $campaign->update(['plan_meta' => $planMeta]);
 
         $slot->targets()
             ->whereIn('status', [AiCampaignSlotTarget::STATUS_READY, AiCampaignSlotTarget::STATUS_FAILED])

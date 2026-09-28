@@ -763,7 +763,7 @@ TEXT;
         }
 
         $caption = trim((string) ($data['caption'] ?? ''));
-        if ($caption !== '' && $this->looksLikeInternalPrompt($caption)) {
+        if ($caption !== '' && \App\Support\MerchantSafeMessage::looksLikeInternalCaption($caption)) {
             $caption = '';
         }
 
@@ -773,35 +773,6 @@ TEXT;
             'hashtags' => array_values(array_slice($tags, 0, 5)),
             'image_prompt' => trim((string) ($data['image_prompt'] ?? '')),
         ];
-    }
-
-    /** Detect leaked planner / agent-thinking text that must never reach merchants. */
-    private function looksLikeInternalPrompt(string $text): bool
-    {
-        $lower = mb_strtolower($text);
-        foreach ([
-            'do not repeat',
-            'assigned matrix',
-            'hard business rules',
-            'process decisions',
-            'slot idea (owner',
-            'forbidden —',
-            'forbidden -',
-            'let me think',
-            'i need to',
-            'as an ai',
-            'return only json',
-            'campaignslot',
-            'knowledge_search',
-            'ask_identity_agent',
-            'campaign_focus',
-        ] as $needle) {
-            if (str_contains($lower, $needle)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function fallbackTitle(string $caption, string $label): string

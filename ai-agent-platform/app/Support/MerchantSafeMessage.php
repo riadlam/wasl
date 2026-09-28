@@ -51,6 +51,47 @@ final class MerchantSafeMessage
     }
 
     /**
+     * Detect leaked planner / agent-thinking text that must never reach merchants.
+     */
+    public static function looksLikeInternalCaption(?string $text): bool
+    {
+        $lower = mb_strtolower(trim((string) $text));
+        if ($lower === '') {
+            return false;
+        }
+
+        foreach ([
+            'do not repeat',
+            'assigned matrix',
+            'hard business rules',
+            'process decisions',
+            'slot idea (owner',
+            'forbidden —',
+            'forbidden -',
+            'let me think',
+            'i need to',
+            'i see the catalog',
+            'owner briefing says',
+            'looking at the recent posts',
+            'based on the campaign brief',
+            'as an ai',
+            'return only json',
+            'campaignslot',
+            'knowledge_search',
+            'ask_identity_agent',
+            'campaign_focus',
+            '**post 1**',
+            'meaning i should write',
+        ] as $needle) {
+            if (str_contains($lower, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param  array<string, mixed>|null  $planMeta
      * @return array<string, mixed>|null
      */

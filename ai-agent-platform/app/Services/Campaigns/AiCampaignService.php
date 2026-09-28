@@ -1210,6 +1210,13 @@ class AiCampaignService
                     : null;
                 $seedCaption = trim((string) ($seed['caption'] ?? $slot->caption ?? ''));
                 $seedTitle = trim((string) ($seed['title'] ?? $slot->title ?? ($slotPlan['idea'] ?? '')));
+                if ($seedCaption !== '' && \App\Support\MerchantSafeMessage::looksLikeInternalCaption($seedCaption)) {
+                    Log::channel(config('campaigns.log_channel', 'stack'))->warning('campaigns.enhance.skip_internal_seed', [
+                        'slot_id' => $slot->id,
+                        'seed_preview' => mb_substr($seedCaption, 0, 160),
+                    ]);
+                    $seedCaption = '';
+                }
 
                 if ($isRegen && $seedCaption !== '') {
                     $enhanced = $this->sk->campaignEnhance(

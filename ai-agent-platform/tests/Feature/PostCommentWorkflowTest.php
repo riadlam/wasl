@@ -159,6 +159,7 @@ class PostCommentWorkflowTest extends TestCase
         (new SendPrivateReplyJob($inbound->id, $workflow->id))->handle(
             app(\App\Services\ConversationService::class),
             app(\App\Services\SocialApi\SocialApiInboxService::class),
+            app(\App\Services\Comments\CommentPrivateDmComposer::class),
         );
 
         Http::assertSent(function ($request) {

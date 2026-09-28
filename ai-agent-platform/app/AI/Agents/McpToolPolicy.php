@@ -68,7 +68,7 @@ class McpToolPolicy
     }
 
     /**
-     * @return list<WaslToolAdapter>
+     * @return list<\App\AI\Tools\AgentTool>
      */
     private function customerTools(Business $business): array
     {
@@ -76,6 +76,11 @@ class McpToolPolicy
         if (! CustomerAiPolicy::allowsOrders($business)) {
             $tools = array_values(array_filter($tools, fn (WaslToolAdapter $t) => $t->name() !== 'create_order'));
         }
+
+        // Comment/DM grounding: recent posts + business context (identity snippets).
+        $tools[] = app(ListRecentPosts::class);
+        $tools[] = app(GetBusinessContext::class);
+        $tools[] = app(GetShopReplyLanguage::class);
 
         return $tools;
     }

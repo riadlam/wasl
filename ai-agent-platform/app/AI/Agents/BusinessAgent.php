@@ -119,6 +119,14 @@ class BusinessAgent
             return $run->fresh('toolCalls');
         }
 
+        $surface = $inbound->type === 'comment' ? 'comment' : 'dm';
+        $parentPostContext = null;
+        if ($surface === 'comment') {
+            $resolved = app(\App\Services\Comments\CommentPostContextResolver::class)
+                ->forComment($business, $conversation->socialAccount, $this->commentPostId($inbound));
+            $parentPostContext = is_array($resolved) ? ($resolved['block'] ?? null) : null;
+        }
+
         $system = $this->prompt->system(
             $business,
             $agent,
@@ -128,8 +136,9 @@ class BusinessAgent
             $allowReply,
             $conversation->socialAccount,
             $this->channelProfile($conversation->social_account_id),
-            $inbound->type === 'comment' ? 'comment' : 'dm',
+            $surface,
             $customerAi,
+            $parentPostContext,
         );
 
         if (AiRuntime::usesSk($business)) {

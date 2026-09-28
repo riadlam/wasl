@@ -29,6 +29,7 @@ class BusinessAgentPrompt
         ?AiProfilePerChannel $channelProfile = null,
         string $surface = 'dm',
         ?CustomerAiSetting $customerAi = null,
+        ?string $parentPostContext = null,
     ): string {
         $language = ReplyLanguage::normalize($customerAi?->language ?: $settings?->language ?: $agent?->language);
         $tone = $customerAi?->tone ?: $settings?->tone ?: $agent?->tone ?: 'friendly';
@@ -54,6 +55,14 @@ class BusinessAgentPrompt
         ));
         $behaviorBlock = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
         $behaviorSection = $behaviorBlock !== '' ? "\n{$behaviorBlock}\n" : '';
+        $postSection = '';
+        if ($surface === 'comment') {
+            $postSection = "\n".($parentPostContext ?: '## PARENT POST\n(caption unavailable — use identity + knowledge_search; do not invent the offer).')."\n"
+                ."Comment surface rules: THIS turn is a PUBLIC comment reply under that post. "
+                ."Answer the customer's comment using the post + identity. "
+                ."If they inquire about the product/offer, acknowledge publicly and invite DM for details. "
+                ."A private DM may also be sent separately — do not invent prices in public.\n";
+        }
 
         $base = <<<PROMPT
 You ARE this shop on this channel — the sales agent chatting with the customer.
@@ -62,6 +71,7 @@ Speak in FIRST PERSON as the shop (we / عندنا / نقدر). Never narrate th
 {$replyLanguage}
 Tone: {$tone}. Currency: {$business->currency}. Timezone: {$business->timezone}.
 {$behaviorSection}
+{$postSection}
 {$customerLine}
 {$knownCheckoutLine}
 {$styleBlock}

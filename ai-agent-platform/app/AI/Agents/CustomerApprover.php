@@ -24,14 +24,25 @@ class CustomerApprover
      *   usage: array{prompt_tokens: int, completion_tokens: int}
      * }
      */
-    public function review(string $draftReply, string $customerText, array $evidence = [], ?string $model = null): array
-    {
+    public function review(
+        string $draftReply,
+        string $customerText,
+        array $evidence = [],
+        ?string $model = null,
+        string $hardBusinessRules = '',
+    ): array {
+        $system = 'You are CustomerApprover for a shop assistant. Approve or reject the draft reply '
+            .'before it is sent to the end customer. Return ONLY JSON: decision (approved|rejected), '
+            .'score (0..1), reasons (string[]), feedback (string). Reject invented prices/stock/fees. '
+            .'If HARD BUSINESS RULES (Should / Must not) are provided, MUST NOT is non-negotiable — reject violations.';
+        if (trim($hardBusinessRules) !== '') {
+            $system .= "\n\n".$hardBusinessRules;
+        }
+
         $messages = [
             [
                 'role' => 'system',
-                'content' => 'You are CustomerApprover for a shop assistant. Approve or reject the draft reply '
-                    .'before it is sent to the end customer. Return ONLY JSON: decision (approved|rejected), '
-                    .'score (0..1), reasons (string[]), feedback (string). Reject invented prices/stock/fees.',
+                'content' => $system,
             ],
             [
                 'role' => 'user',
@@ -39,6 +50,7 @@ class CustomerApprover
                     'customer_text' => $customerText,
                     'draft_reply' => $draftReply,
                     'evidence' => array_slice($evidence, 0, 16),
+                    'hard_business_rules' => trim($hardBusinessRules) !== '' ? $hardBusinessRules : '(none)',
                 ], JSON_UNESCAPED_UNICODE) ?: '{}',
             ],
         ];
@@ -89,6 +101,7 @@ class CustomerApprover
         callable $revise,
         ?string $model = null,
         int $maxRounds = 2,
+        string $hardBusinessRules = '',
     ): array {
         $usage = ['prompt_tokens' => 0, 'completion_tokens' => 0, 'fal_calls' => 0];
         $rounds = [];
@@ -96,7 +109,7 @@ class CustomerApprover
         $last = [];
 
         for ($round = 1; $round <= max(1, $maxRounds); $round++) {
-            $review = $this->review($current, $customerText, $evidence, $model);
+            $review = $this->review($current, $customerText, $evidence, $model, $hardBusinessRules);
             $usage['prompt_tokens'] += (int) ($review['usage']['prompt_tokens'] ?? 0);
             $usage['completion_tokens'] += (int) ($review['usage']['completion_tokens'] ?? 0);
             $usage['fal_calls']++;

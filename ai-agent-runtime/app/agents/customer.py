@@ -271,6 +271,7 @@ class CustomerAgentService:
                 revise_fn=revise,
                 business_id=int(tenant["business_id"]),
                 model=request.llm_model,
+                hard_business_rules=self._hard_business_rules(request.system_prompt or ""),
             )
             # Belt-and-suspenders: never leak a fulfillment claim without owner status proof.
             reply = self.customer_approver._safe_pending_verify_reply(
@@ -481,6 +482,23 @@ class CustomerAgentService:
         if game_ids:
             facts.append("game_or_player_id=" + game_ids[-1])
         return facts
+
+    @staticmethod
+    def _hard_business_rules(system_prompt: str) -> str:
+        """Pull HARD BUSINESS RULES block from Laravel BusinessAgentPrompt if present."""
+        text = system_prompt or ""
+        marker = "## HARD BUSINESS RULES"
+        start = text.find(marker)
+        if start < 0:
+            return ""
+        rest = text[start:]
+        # Stop at the next top-level section that looks like a new prompt block.
+        end = len(rest)
+        for nxt in ("\nCurrent customer:", "\nKnown checkout", "\nStyle:", "\nVoice (", "\nSales closer"):
+            idx = rest.find(nxt, len(marker))
+            if 0 <= idx < end:
+                end = idx
+        return rest[:end].strip()
 
 
 async def preprocess_media_safe(request: CustomerTurnRequest, llm: Any) -> str | None:

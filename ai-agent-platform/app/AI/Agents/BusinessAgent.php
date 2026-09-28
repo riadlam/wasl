@@ -263,6 +263,7 @@ class BusinessAgent
                 },
                 $run->model,
                 2,
+                app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business),
             );
             $finalText = (string) ($approved['reply'] ?? $finalText);
             AgentToolCall::query()->create([

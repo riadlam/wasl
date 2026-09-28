@@ -77,6 +77,20 @@ class AgentBehaviorRulesTest extends TestCase
         $this->assertStringContainsString('HARD BUSINESS RULES', $customerPrompt);
         $this->assertStringContainsString('Offer cash on delivery first', $customerPrompt);
         $this->assertStringContainsString('Never invent discounts', $customerPrompt);
+
+        $commentPrompt = app(BusinessAgentPrompt::class)->system(
+            $business,
+            $business->agent,
+            $business->agentSettings,
+            null,
+            [],
+            true,
+            null,
+            null,
+            'comment',
+        );
+        $this->assertStringContainsString('HARD BUSINESS RULES', $commentPrompt);
+        $this->assertStringContainsString('Never invent discounts', $commentPrompt);
     }
 
     public function test_behavior_rules_block_includes_must_not_for_campaign_paths(): void

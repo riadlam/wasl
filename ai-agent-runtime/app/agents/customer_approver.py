@@ -25,6 +25,8 @@ Return ONLY valid JSON:
 Reject when the draft invents prices, stock, delivery fees, discounts, product specs,
 order status, or promises not present in evidence/tools/RAG.
 Reject rude, off-language, or unsafe replies.
+If HARD BUSINESS RULES (Should / Must not) are provided in the user payload, treat MUST NOT
+as non-negotiable — reject any draft that violates them; feedback must require a rewrite that obeys them.
 
 Voice (first person as the shop):
 - Reject third-person shop talk: "this shop sells", "they offer", "their website",
@@ -261,6 +263,7 @@ class CustomerApprover:
         evidence: list[str],
         business_id: int | None = None,
         model: str | None = None,
+        hard_business_rules: str = "",
     ) -> dict[str, Any]:
         tracer = get_tracer()
         with tracer.start_as_current_span("metacognition.customer_approver") as span:
@@ -321,14 +324,19 @@ class CustomerApprover:
                 span.set_attribute("force_reject", True)
                 return forced
 
+            rules = (hard_business_rules or "").strip()
+            system = CUSTOMER_APPROVER_SYSTEM
+            if rules:
+                system = f"{CUSTOMER_APPROVER_SYSTEM}\n\n{rules}\n"
             payload = {
                 "customer_text": customer_text,
                 "draft_reply": draft_reply,
                 "evidence": evidence[:16],
+                "hard_business_rules": rules or "(none)",
             }
             response = await self.llm.chat_completion(
                 [
-                    {"role": "system", "content": CUSTOMER_APPROVER_SYSTEM},
+                    {"role": "system", "content": system},
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                 ],
                 model=model,
@@ -350,6 +358,7 @@ class CustomerApprover:
         business_id: int | None = None,
         model: str | None = None,
         max_rounds: int | None = None,
+        hard_business_rules: str = "",
     ) -> dict[str, Any]:
         """Reject→revise until CustomerApprover approves (bounded)."""
         rounds_limit = max_rounds if max_rounds is not None else max(1, int(self.settings.metacognition_max_retries) + 1)
@@ -365,6 +374,7 @@ class CustomerApprover:
                 evidence=evidence,
                 business_id=business_id,
                 model=model,
+                hard_business_rules=hard_business_rules,
             )
             self._add_usage(usage, review.get("usage") or {})
             usage["fal_calls"] += 1

@@ -118,36 +118,6 @@ export default function StepReview({ state, accounts, launchNote }) {
                     )}
                 </Panel>
 
-                {state.examplePreview && (
-                    <Panel title="Campaign tease">
-                        <div className="flex gap-3">
-                            {state.examplePreview.image_url && (
-                                <img
-                                    src={state.examplePreview.image_url}
-                                    alt=""
-                                    className="h-16 w-16 shrink-0 rounded-md object-cover ring-1 ring-ink/10"
-                                />
-                            )}
-                            <div className="min-w-0 flex-1">
-                                {state.examplePreview.title ? (
-                                    <p className="text-[12px] font-semibold text-ink">
-                                        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink/40">Idea · </span>
-                                        {state.examplePreview.title}
-                                    </p>
-                                ) : null}
-                                <p className={`whitespace-pre-wrap text-[12px] leading-relaxed text-ink/75 ${state.examplePreview.title ? 'mt-1' : ''}`}>
-                                    {state.examplePreview.caption}
-                                </p>
-                                {Array.isArray(state.examplePreview.hashtags) && state.examplePreview.hashtags.length > 0 && (
-                                    <p className="mt-2 text-[11px] font-medium text-accent">
-                                        {state.examplePreview.hashtags.join(' ')}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </Panel>
-                )}
-
                 {state.contentMode === 'product_images' && state.images.length > 0 && (
                     <Panel title="Uploads">
                         <div className="flex flex-wrap gap-1.5">

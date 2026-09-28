@@ -15,29 +15,21 @@ export const CONTENT_MODES = {
         id: 'ai_recent',
         title: 'AI from your channels',
         description: 'We study recent posts on the selected pages, then draft new posts and stories in the same voice.',
-        request: 'We research your pages, draft the post, then check brand fit before you see a sample.',
+        request: 'Write a focus prompt. At launch, AI plans distinct angles for every post, then drafts them for your approval.',
         exampleTitle: 'Example output',
         exampleBody: 'Carousel caption in Darija highlighting a weekend promo, plus two story frames with CTA stickers — timed to your Day 2 slots.',
-        agents: ['Brief', 'Write', 'Brand check'],
+        agents: ['Plan', 'Write', 'Approve'],
     },
     product_images: {
         id: 'product_images',
         title: 'Product images',
         description: 'Upload product photos; AI creates one post and matching stories per image across your schedule.',
-        request: 'Same flow on your uploads: research → draft → brand check, then post + story sizes.',
+        request: 'Upload product photos. At launch, each image gets a different content angle — then captions are drafted for approval.',
         exampleTitle: 'Example output',
         exampleBody: 'Square post with price line and hashtags, plus a vertical story with swipe-up style CTA — mapped to your Day 1 morning slot.',
-        agents: ['Brief', 'Write', 'Brand check'],
+        agents: ['Plan', 'Write', 'Approve'],
     },
 };
-
-export const CAMPAIGN_TEASE_AGENTS = [
-    { id: 'brief', role: 'Brief' },
-    { id: 'identity', role: 'Identity' },
-    { id: 'confirm_q', role: 'Confirm Q' },
-    { id: 'write', role: 'Write' },
-    { id: 'confirm', role: 'Brand check' },
-];
 
 export function minImagesForPosts(totalPosts) {
     const n = Number(totalPosts) || 0;
@@ -109,7 +101,7 @@ export function initialCampaignState() {
         examplePreview: null,
         planMeta: null,
         briefNotes: null,
-        briefComplete: false,
+        briefComplete: true,
         images: [],
     };
 }
@@ -183,21 +175,12 @@ export function validateStep(state, stepIndex) {
         } else {
             errors.contentMode = 'Choose a content mode.';
         }
-        if (!state.briefComplete) {
-            errors.brief = 'Confirm the campaign brief (Confirm / Deny cards) before continuing.';
-        }
     }
     return errors;
 }
 
 export function isStepValid(state, stepIndex) {
     return Object.keys(validateStep(state, stepIndex)).length === 0;
-}
-
-/** Content mode / prompt / images OK — brief cards may still be pending. */
-export function contentBasicsValid(state) {
-    const errors = validateStep(state, 2);
-    return Object.keys(errors).every((key) => key === 'brief');
 }
 
 export function channelLabel(account) {

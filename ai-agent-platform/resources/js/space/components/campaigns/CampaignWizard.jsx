@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, LoaderCircle, Rocket } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,7 +14,6 @@ import StepReview from './StepReview';
 import {
     CAMPAIGN_STEPS,
     campaignPayload,
-    contentBasicsValid,
     initialCampaignState,
     isStepValid,
     validateStep,
@@ -36,8 +35,6 @@ export default function CampaignWizard({ onBack, onLaunched }) {
     const [touched, setTouched] = useState(false);
     const [launchNote, setLaunchNote] = useState('');
     const [launching, setLaunching] = useState(false);
-    const contentRef = useRef(null);
-    const pendingBriefAdvance = useRef(false);
 
     const accounts = useMemo(() => connectedAccounts(socialAccounts), [socialAccounts]);
 
@@ -57,40 +54,18 @@ export default function CampaignWizard({ onBack, onLaunched }) {
 
     const goStep = (index) => {
         if (!canJumpTo(index)) return;
-        pendingBriefAdvance.current = false;
         setTouched(false);
         setStep(index);
     };
 
     const goNext = () => {
         setTouched(true);
-        if (step === 2) {
-            if (!contentBasicsValid(state)) return;
-            if (!state.briefComplete) {
-                pendingBriefAdvance.current = true;
-                contentRef.current?.openBrief();
-                return;
-            }
-            pendingBriefAdvance.current = false;
-            setTouched(false);
-            setStep(3);
-            return;
-        }
         if (!stepValid) return;
-        pendingBriefAdvance.current = false;
         setTouched(false);
         setStep((s) => Math.min(s + 1, CAMPAIGN_STEPS.length - 1));
     };
 
-    const onBriefComplete = () => {
-        if (!pendingBriefAdvance.current) return;
-        pendingBriefAdvance.current = false;
-        setTouched(false);
-        setStep(3);
-    };
-
     const goBack = () => {
-        pendingBriefAdvance.current = false;
         setTouched(false);
         setStep((s) => Math.max(s - 1, 0));
     };
@@ -136,7 +111,7 @@ export default function CampaignWizard({ onBack, onLaunched }) {
             const { data } = await api.post('/agent/campaigns', campaignPayload({ ...state, images }, assetIds));
             const label = data?.campaign?.name || 'Campaign';
             setLaunchNote(
-                `${label} is live. Drafts start now; scheduled times control when posts go live on your channels. Approve each draft in Telegram (Accept / Cancel / Regen) before the next.`,
+                `${label} is live. AI plans distinct angles for every post, then drafts them for approval. Scheduled times control when posts go live — approve ready drafts in Telegram or here (Accept / Cancel / Regen).`,
             );
             queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
             if (data?.campaign?.id) onLaunched?.(data.campaign);
@@ -147,8 +122,7 @@ export default function CampaignWizard({ onBack, onLaunched }) {
         }
     };
 
-    const showErrors = touched && !(step === 2 ? contentBasicsValid(state) : stepValid);
-    const contentErrors = step === 2 && touched ? errors : (showErrors ? errors : {});
+    const showErrors = touched && !stepValid;
 
     return (
         <div className="campaign-wizard h-full overflow-y-auto bg-white">
@@ -216,11 +190,9 @@ export default function CampaignWizard({ onBack, onLaunched }) {
                             )}
                             {step === 2 && (
                                 <StepContent
-                                    ref={contentRef}
                                     state={state}
                                     onChange={patchState}
-                                    errors={contentErrors}
-                                    onBriefComplete={onBriefComplete}
+                                    errors={showErrors ? errors : {}}
                                 />
                             )}
                             {step === 3 && (

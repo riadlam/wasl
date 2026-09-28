@@ -30,18 +30,21 @@ DRAFT_SYSTEM = """You are CampaignSlotDrafter — Maghreb social caption writer 
 
 You draft ONLY this slot's assigned offer/idea. Never feature other campaign offers.
 
-You MAY call tools:
-- ask_identity_agent — brand voice
+You SHOULD call tools before writing:
+- ask_identity_agent — brand voice, niche, how this shop talks
 - knowledge_search — memories (campaign brief), brand, tone, posts, products
-- list_recent_posts — avoid copying live posts
+- list_recent_posts — avoid copying live posts; match energy
 - get_business_context / get_shop_reply_language
-- search_products / get_product — verify real names/prices only
+- search_products / get_product — verify real names/prices only (never invent)
 
 Rules:
 - ONLY the SLOT IDEA / THIS OFFER / THIS IMAGE. Forbidden hooks must not be reused.
 - Language: shop reply language (usually Algerian Darija Arabic script) unless focus says otherwise.
-- Posts: hook + blank line + 2 short body lines + CTA. Exactly 3 niche hashtags in hashtags array (not inside caption). 1–3 emojis.
+- Feed posts: FULL caption — hook + blank line + 3–5 short body lines (benefit / offer detail / urgency) + blank line + CTA.
+  Target ~280–520 characters. Not a one-liner. Exactly 3 niche hashtags in hashtags array (not inside caption). 1–3 emojis.
 - Stories: under 80 characters, at most 2 hashtags.
+- Anti-hallucination: never invent prices, discounts, stock, pack contents, or mechanics not in verified facts / brief / tools.
+  If unknown, sell name + known price + CTA only.
 - HARD BUSINESS RULES from the shop (Should / Must not cards), when provided, OVERRIDE style preferences — never violate MUST NOT.
 - Return ONLY JSON:
   {"title":"...","caption":"...","hashtags":["#a","#b","#c"],"image_prompt":"English scene or short note"}
@@ -188,8 +191,33 @@ class CampaignSlotAgent:
             system = DRAFT_SYSTEM
             if rules:
                 system = f"{DRAFT_SYSTEM}\n\n{rules}\n"
+
+            brand_context = ""
+            try:
+                hits = await self.runtime.knowledge.search(
+                    business_id=business_id,
+                    query=(slot_offer or slot_idea or focus or "shop brand products tone")[:500],
+                    namespace=None,
+                    top_k=8,
+                )
+                brand_context = "\n".join(
+                    f"[{h.get('namespace') or 'brand'}] {h.get('content')}"
+                    for h in hits
+                    if h.get("content")
+                )
+                activity().input(
+                    "draft brand RAG",
+                    {"chars": len(brand_context), "hits": len(hits)},
+                )
+            except Exception as exc:
+                logger.info("draft slot brand RAG skipped: %s", exc)
+
             user_payload: dict[str, Any] = {
-                "task": "Draft THIS campaign slot only. Return JSON only.",
+                "task": (
+                    "Draft THIS campaign slot only. Use shop identity/memories. "
+                    "Write a FULL feed caption (~280–520 chars) when kind=post. "
+                    "No invented prices/products. Return JSON only."
+                ),
                 "platform": platform,
                 "kind": kind,
                 "content_mode": content_mode,
@@ -200,6 +228,8 @@ class CampaignSlotAgent:
                 "hard_business_rules": rules or "(none)",
                 "campaign_focus": (focus or "")[:6000],
                 "this_image_description": (image_description or "")[:2000],
+                "shop_identity_and_memories": (brand_context or "")[:5000]
+                or "(call ask_identity_agent + knowledge_search)",
             }
             user_content: Any
             if image_data_url:

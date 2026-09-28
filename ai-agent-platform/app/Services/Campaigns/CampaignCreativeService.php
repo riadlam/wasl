@@ -126,7 +126,7 @@ class CampaignCreativeService
         $langBlock = ReplyLanguage::creativeInstruction($language);
         $shape = $kind === AiCampaignSlot::KIND_STORY
             ? 'One short story line, under 80 characters, plus at most 2 hashtags. 1 emoji is fine.'
-            : 'One feed caption: hook line + blank line + 2 short body lines + CTA. Exactly 3 niche hashtags. Always include 1–3 niche emojis (e.g. gaming ⚡🎮💎, delivery 🚚). ONLY the offer assigned for THIS slot (see SLOT IDEA / THIS SLOT OFFER / THIS IMAGE in focus) — never feature other campaign offers or dump a product list. Put hashtags only in the JSON hashtags array — do not duplicate them inside caption.';
+            : 'FULL Maghreb feed caption (~280–520 characters): hook line + blank line + 3–5 short body lines (benefit / offer detail / urgency or social proof) + blank line + clear CTA. Exactly 3 niche hashtags. Always include 1–3 niche emojis (e.g. gaming ⚡🎮💎, delivery 🚚). ONLY the offer assigned for THIS slot (see SLOT IDEA / THIS SLOT OFFER / THIS IMAGE in focus) — never feature other campaign offers or dump a product list. Put hashtags only in the JSON hashtags array — do not duplicate them inside caption. Ground voice in shop identity / recent posts style when present. Never invent prices, discounts, stock, or mechanics not in VERIFIED_PRODUCT_FACTS / brief / tools.';
         $size = $this->imageSizeFor($platform, $kind);
 
         $dayCount = max(1, (int) ($campaign['day_count'] ?? 1));

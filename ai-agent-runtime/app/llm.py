@@ -18,13 +18,13 @@ _MODEL_ALIASES: dict[str, str] = {
 }
 
 
-def resolve_provider_model(model: str | None, default: str | None = None) -> str | None:
-    raw = (model or "").strip() or (default or "").strip() or None
-    if not raw:
-        return None
+def resolve_provider_model(model: str | None, default: str | None = None) -> str:
+    """Map catalog keys to provider IDs; never return empty."""
+    fallback = (default or "").strip() or "anthropic/claude-sonnet-4.5"
+    raw = (model or "").strip() or fallback
     if "/" in raw:
         return raw
-    return _MODEL_ALIASES.get(raw, raw)
+    return _MODEL_ALIASES.get(raw, raw if "/" in raw else _MODEL_ALIASES.get(raw, fallback))
 
 
 def _fal_headers(api_key: str) -> dict[str, str]:
@@ -78,7 +78,7 @@ class LlmClient:
         temperature: float = 0.4,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
-            "model": resolve_provider_model(model, self.settings.llm_model) or self.settings.llm_model,
+            "model": resolve_provider_model(model, self.settings.llm_model),
             "messages": messages,
             "temperature": temperature,
         }

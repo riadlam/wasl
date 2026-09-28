@@ -14,21 +14,29 @@ logger = logging.getLogger(__name__)
 ENHANCE_SYSTEM = """You are PostEnhancerAgent — senior Maghreb social copy editor for Wasl campaigns.
 
 Your job: take an EXISTING campaign post the owner rejected (Regenerate) and produce a CLEARLY BETTER version.
-Do NOT ignore the previous post — improve it: stronger hook, tighter CTA, better Darija/French voice, richer but faithful product claims.
+Do NOT ignore the previous post — improve it: stronger hook, richer body, clearer CTA, better Darija/French voice.
+Ground the rewrite in THIS shop's identity + memories + verified products — never invent.
 
-You MAY call tools:
-- ask_identity_agent — brand voice, tone, what this shop is
-- knowledge_search — especially namespace=memories (campaign brief / process decisions), brand, tone, posts, products
-- list_recent_posts — avoid sounding like a copy of recent live posts
+You SHOULD call tools before writing (especially on regenerate):
+- ask_identity_agent — who this shop is, brand voice, niche, how they talk
+- knowledge_search — memories (campaign brief / process YES-NO), brand, tone, products, recent post style
+- list_recent_posts — match pacing/energy without copying
+- search_products / get_product — ONLY to verify real names/prices already in focus or catalog
 - get_business_context / get_shop_reply_language — shop profile + reply language
-- search_products / get_product — only to verify real prices/names (never invent)
 
-Rules:
-- Stay faithful to campaign focus / brief / process YES-NO decisions.
-- Do not invent products, prices, or stock.
+Caption length (feed posts, not stories):
+- Aim for a FULL Maghreb feed caption: strong hook line, blank line, then 3–5 short body lines (benefit / offer detail / social proof or urgency), blank line, clear CTA.
+- Target roughly 280–520 characters of caption text (not counting hashtags). Do NOT write a one-liner or 2-line stub.
+- Stories stay short (under ~80 characters).
+
+Anti-hallucination (hard):
+- Stay faithful to campaign focus / brief / process YES-NO decisions and THIS slot offer only.
+- Do not invent products, prices, discounts, stock, pack contents, or game mechanics not in verified facts / brief / tool results.
+- If a product detail is unknown, sell with name + known price + CTA only — never fill gaps with guesses.
+- HARD BUSINESS RULES (Should / Must not), when provided, OVERRIDE style — never violate MUST NOT.
 - Language: match shop reply language (usually Algerian Darija Arabic script) unless focus says otherwise.
-- HARD BUSINESS RULES from the shop (Should / Must not cards), when provided, OVERRIDE style preferences — never violate MUST NOT.
-- Return ONLY valid JSON with keys:
+
+Return ONLY valid JSON with keys:
   title: string (short owner-facing idea, 4-10 words)
   caption: string (publishable caption, no hashtag dump inside)
   hashtags: string[] (exactly 3, with #)
@@ -110,8 +118,36 @@ class PostEnhancerAgent:
             system = ENHANCE_SYSTEM
             if rules:
                 system = f"{ENHANCE_SYSTEM}\n\n{rules}\n"
+
+            # Prefetch identity/memories so regenerate is grounded even if the model skips tools.
+            brand_context = ""
+            try:
+                hits = await self.runtime.knowledge.search(
+                    business_id=business_id,
+                    query=(
+                        (slot_offer or slot_idea or previous_title or focus or "shop brand products tone")[:500]
+                    ),
+                    namespace=None,
+                    top_k=8,
+                )
+                brand_context = "\n".join(
+                    f"[{h.get('namespace') or 'brand'}] {h.get('content')}"
+                    for h in hits
+                    if h.get("content")
+                )
+                activity().input(
+                    "enhance brand RAG",
+                    {"chars": len(brand_context), "hits": len(hits)},
+                )
+            except Exception as exc:
+                logger.info("post enhance brand RAG skipped: %s", exc)
+
             user_payload = {
-                "task": "Enhance this campaign post for regenerate. Return JSON only.",
+                "task": (
+                    "Enhance this campaign post for regenerate. "
+                    "First use identity + memories/tools if needed, then return a FULLER feed caption "
+                    "(~280–520 chars: hook + body + CTA), faithful, no hallucinations. Return JSON only."
+                ),
                 "platform": platform,
                 "kind": kind,
                 "content_mode": content_mode,
@@ -120,6 +156,7 @@ class PostEnhancerAgent:
                 "slot_offer": slot_offer or "",
                 "forbidden_hooks": forbidden_hooks or "(none)",
                 "hard_business_rules": rules or "(none)",
+                "shop_identity_and_memories": (brand_context or "")[:5000] or "(call ask_identity_agent + knowledge_search)",
                 "previous": {
                     "title": previous_title or "",
                     "caption": prev[:4000],

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     llm_base_url: str = "https://fal.run/openrouter/router/openai/v1"
     llm_api_key: str = ""
+    llm_model: str = "anthropic/claude-sonnet-4.5"
     translation_model: str = "google/gemini-2.5-flash"
 
     # Fal OpenRouter GPT embeddings (same FAL_KEY as chat)

@@ -150,6 +150,26 @@ class TelegramBotClient
         ]);
     }
 
+    /**
+     * Clear or replace inline keyboard without changing text/caption (works on photo + text).
+     *
+     * @param  array<int, array<string, mixed>>  $inlineKeyboard  [] removes buttons
+     * @return array{ok: bool, message_id?: string, chat_id?: string, error?: string, file_id?: string|null}
+     */
+    public function editMessageReplyMarkup(
+        string $chatId,
+        string $messageId,
+        array $inlineKeyboard = [],
+    ): array {
+        return $this->call('editMessageReplyMarkup', [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'reply_markup' => [
+                'inline_keyboard' => $inlineKeyboard,
+            ],
+        ]);
+    }
+
     public function answerCallbackQuery(string $callbackQueryId, ?string $text = null): void
     {
         $payload = ['callback_query_id' => $callbackQueryId];

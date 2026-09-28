@@ -165,28 +165,97 @@ class TelegramWebhookService
             return;
         }
 
-        // Pin outbound to the exact message the owner tapped (avoids editing a stale id / sending a duplicate).
-        $clickedMessageId = (string) ($callback['message']['message_id'] ?? '');
+        $message = is_array($callback['message'] ?? null) ? $callback['message'] : [];
+        $clickedMessageId = (string) ($message['message_id'] ?? '');
+        $hasPhoto = isset($message['photo']) && is_array($message['photo']) && $message['photo'] !== [];
+
         if ($clickedMessageId !== '') {
-            $this->slotApprovals->bindTelegramMessage($business, $slot, $chatId, $clickedMessageId);
+            $this->slotApprovals->bindTelegramMessage($business, $slot, $chatId, $clickedMessageId, $hasPhoto);
         }
 
-        // Answer immediately so Telegram stops the loading spinner; then lock buttons.
-        $ack = match ($action) {
-            'ok' => 'Accepting…',
-            'no' => 'Cancelling…',
-            're' => 'Regenerating…',
-            default => 'Working…',
-        };
-        if ($callbackId !== '') {
-            $this->bot->answerCallbackQuery($callbackId, $ack);
+        // Reject spam / stale taps before any heavy work.
+        $fresh = $slot->fresh();
+        $status = (string) ($fresh?->status ?? '');
+        $busyStatuses = [
+            AiCampaignSlot::STATUS_PUBLISHING,
+            AiCampaignSlot::STATUS_REGEN_REQUESTED,
+            AiCampaignSlot::STATUS_GENERATING,
+            AiCampaignSlot::STATUS_SCHEDULED,
+            AiCampaignSlot::STATUS_CANCELLED,
+            AiCampaignSlot::STATUS_FAILED,
+        ];
+        if ($fresh && in_array($status, $busyStatuses, true)) {
+            if ($callbackId !== '') {
+                $this->bot->answerCallbackQuery($callbackId, 'Already handled');
+            }
+            try {
+                $this->slotApprovals->lockTelegramActions(
+                    $fresh,
+                    match ($status) {
+                        AiCampaignSlot::STATUS_REGEN_REQUESTED, AiCampaignSlot::STATUS_GENERATING => "⏳ Still generating…\nSlot #{$slotId}\n\nPlease wait — buttons stay locked.",
+                        AiCampaignSlot::STATUS_PUBLISHING => "✅ Already accepting…\nSlot #{$slotId}",
+                        AiCampaignSlot::STATUS_SCHEDULED => "✅ Already scheduled\nSlot #{$slotId}",
+                        AiCampaignSlot::STATUS_CANCELLED => "❌ Already cancelled\nSlot #{$slotId}",
+                        default => "Slot #{$slotId}\nStatus: {$status}",
+                    },
+                );
+            } catch (Throwable) {
+            }
+
+            return;
+        }
+
+        if ($action === 'ok' || $action === 're') {
+            if ($status !== AiCampaignSlot::STATUS_AWAITING_APPROVAL) {
+                if ($callbackId !== '') {
+                    $this->bot->answerCallbackQuery($callbackId, 'Not awaiting approval');
+                }
+
+                return;
+            }
+        }
+
+        $lock = \Illuminate\Support\Facades\Cache::lock('tg:slot:cb:'.$slotId, 45);
+        if (! $lock->get()) {
+            if ($callbackId !== '') {
+                $this->bot->answerCallbackQuery($callbackId, 'Already working…');
+            }
+
+            return;
         }
 
         try {
+            $ack = match ($action) {
+                'ok' => 'Accepting…',
+                'no' => 'Cancelling…',
+                're' => 'Regenerating…',
+                default => 'Working…',
+            };
+            if ($callbackId !== '') {
+                $this->bot->answerCallbackQuery($callbackId, $ack);
+            }
+
+            // Strip buttons + status text BEFORE long accept/regen work.
+            $shop = $business->name ?: 'Shop';
+            $lockText = match ($action) {
+                'ok' => "✅ Accepting…\nShop: {$shop}\nSlot #{$slotId}\n\nButtons locked — scheduling…",
+                'no' => "❌ Cancelling…\nSlot #{$slotId}\n\nButtons locked.",
+                're' => "⏳ Generating a stronger version…\nShop: {$shop}\nSlot #{$slotId}\n\nButtons locked — please wait.",
+                default => "Working…\nSlot #{$slotId}",
+            };
+            try {
+                $this->slotApprovals->lockTelegramActions($fresh ?? $slot, $lockText);
+            } catch (Throwable $e) {
+                Log::warning('telegram.slot_lock_failed', [
+                    'slot_id' => $slotId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             match ($action) {
-                'ok' => $this->slotApprovals->accept($slot),
-                'no' => $this->slotApprovals->cancel($slot),
-                're' => $this->slotApprovals->regenerate($slot),
+                'ok' => $this->slotApprovals->accept($slot->fresh() ?? $slot),
+                'no' => $this->slotApprovals->cancel($slot->fresh() ?? $slot),
+                're' => $this->slotApprovals->regenerate($slot->fresh() ?? $slot),
                 default => null,
             };
         } catch (Throwable $e) {
@@ -198,10 +267,12 @@ class TelegramWebhookService
             try {
                 $this->slotApprovals->lockTelegramActions(
                     $slot->fresh() ?? $slot,
-                    "⚠️ Action failed\nSlot #{$slotId}\n\n".$e->getMessage()."\n\nTry again from the dashboard if needed.",
+                    "⚠️ Action failed\nSlot #{$slotId}\n\nTry again from the dashboard if needed.",
                 );
             } catch (Throwable) {
             }
+        } finally {
+            optional($lock)->release();
         }
     }
 }

@@ -114,6 +114,41 @@ class TelegramAlertService
         }
     }
 
+    /** Instantly strip inline buttons (photo or text message). */
+    public function clearKeyboardFor(Model $subject, string $kind): bool
+    {
+        try {
+            $row = TelegramOutboundMessage::query()
+                ->where('subject_type', $subject::class)
+                ->where('subject_id', $subject->getKey())
+                ->where('kind', $kind)
+                ->first();
+            if (! $row || ! $row->chat_id || ! $row->message_id) {
+                return false;
+            }
+
+            $result = $this->bot->editMessageReplyMarkup(
+                (string) $row->chat_id,
+                (string) $row->message_id,
+                [],
+            );
+            $ok = ! empty($result['ok'])
+                || str_contains((string) ($result['error'] ?? ''), 'message is not modified');
+            if ($ok) {
+                $meta = is_array($row->metadata) ? $row->metadata : [];
+                $row->update([
+                    'metadata' => array_merge($meta, ['keyboard' => false]),
+                ]);
+            }
+
+            return $ok;
+        } catch (Throwable $e) {
+            Log::warning('telegram.clear_keyboard_failed', ['error' => $e->getMessage(), 'kind' => $kind]);
+
+            return false;
+        }
+    }
+
     /**
      * @param  array<int, array<string, mixed>>|null  $inlineKeyboard
      * @param  array{bytes: string, filename?: string, asset_id?: int|null}|null  $photo
@@ -326,8 +361,10 @@ class TelegramAlertService
             return true;
         }
 
+        $errLower = strtolower((string) ($result['error'] ?? ''));
+
         // Caption edit can fail if Telegram thinks it's a text message — try text as last resort.
-        if ($wasPhoto && str_contains(strtolower((string) ($result['error'] ?? '')), 'there is no caption')) {
+        if ($wasPhoto && str_contains($errLower, 'there is no caption')) {
             $fallback = $this->bot->editMessageText(
                 (string) $row->chat_id,
                 (string) $row->message_id,
@@ -346,6 +383,64 @@ class TelegramAlertService
             }
 
             return $ok;
+        }
+
+        // Text edit failed because this is actually a photo message (metadata lost has_photo).
+        if (! $wasPhoto && (
+            str_contains($errLower, 'there is no text')
+            || str_contains($errLower, "message can't be edited")
+            || str_contains($errLower, 'message to edit not found') === false && str_contains($errLower, 'caption')
+        )) {
+            $fallback = $this->bot->editMessageCaption(
+                (string) $row->chat_id,
+                (string) $row->message_id,
+                $text,
+                $inlineKeyboard,
+            );
+            $ok = ! empty($fallback['ok']) || str_contains((string) ($fallback['error'] ?? ''), 'message is not modified');
+            if ($ok) {
+                $row->update([
+                    'last_text' => $text,
+                    'metadata' => array_merge($meta, [
+                        'keyboard' => is_array($inlineKeyboard) && $inlineKeyboard !== [],
+                        'has_photo' => true,
+                    ]),
+                ]);
+            } else {
+                // Last resort: at least strip buttons.
+                $markup = $this->bot->editMessageReplyMarkup(
+                    (string) $row->chat_id,
+                    (string) $row->message_id,
+                    is_array($inlineKeyboard) ? $inlineKeyboard : [],
+                );
+                $ok = ! empty($markup['ok']) || str_contains((string) ($markup['error'] ?? ''), 'message is not modified');
+                if ($ok) {
+                    $row->update([
+                        'metadata' => array_merge($meta, [
+                            'keyboard' => is_array($inlineKeyboard) && $inlineKeyboard !== [],
+                            'has_photo' => true,
+                        ]),
+                    ]);
+                }
+            }
+
+            return $ok;
+        }
+
+        // Always try stripping buttons if content edit failed.
+        if (is_array($inlineKeyboard) && $inlineKeyboard === []) {
+            $markup = $this->bot->editMessageReplyMarkup(
+                (string) $row->chat_id,
+                (string) $row->message_id,
+                [],
+            );
+            if (! empty($markup['ok']) || str_contains((string) ($markup['error'] ?? ''), 'message is not modified')) {
+                $row->update([
+                    'metadata' => array_merge($meta, ['keyboard' => false]),
+                ]);
+
+                return true;
+            }
         }
 
         return false;

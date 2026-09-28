@@ -194,6 +194,12 @@ class CampaignSlotApprovalService
     /** Clear buttons immediately so the owner cannot double-tap. */
     public function lockTelegramActions(AiCampaignSlot $slot, string $statusText): void
     {
+        // Strip keyboard first (works for photo + text even if caption edit races).
+        $this->alerts->clearKeyboardFor(
+            $slot,
+            TelegramOutboundMessage::KIND_CAMPAIGN_SLOT_APPROVAL,
+        );
+
         $this->alerts->updateFor(
             $slot,
             TelegramOutboundMessage::KIND_CAMPAIGN_SLOT_APPROVAL,
@@ -205,12 +211,31 @@ class CampaignSlotApprovalService
 
     /**
      * Remember which Telegram message the owner tapped for this slot.
+     * Preserves has_photo / asset metadata so later caption edits (lock buttons) succeed.
      */
-    public function bindTelegramMessage(Business $business, AiCampaignSlot $slot, string $chatId, string $messageId): void
-    {
+    public function bindTelegramMessage(
+        Business $business,
+        AiCampaignSlot $slot,
+        string $chatId,
+        string $messageId,
+        bool $hasPhoto = false,
+    ): void {
         if ($chatId === '' || $messageId === '') {
             return;
         }
+
+        $existing = TelegramOutboundMessage::query()
+            ->where('subject_type', AiCampaignSlot::class)
+            ->where('subject_id', $slot->getKey())
+            ->where('kind', TelegramOutboundMessage::KIND_CAMPAIGN_SLOT_APPROVAL)
+            ->first();
+
+        $prevMeta = is_array($existing?->metadata) ? $existing->metadata : [];
+        $meta = array_merge($prevMeta, [
+            'keyboard' => true,
+            'bound_from_callback' => true,
+            'has_photo' => $hasPhoto || ! empty($prevMeta['has_photo']),
+        ]);
 
         TelegramOutboundMessage::query()->updateOrCreate(
             [
@@ -222,7 +247,7 @@ class CampaignSlotApprovalService
                 'business_id' => $business->id,
                 'chat_id' => $chatId,
                 'message_id' => $messageId,
-                'metadata' => ['keyboard' => true, 'bound_from_callback' => true],
+                'metadata' => $meta,
             ],
         );
     }

@@ -622,11 +622,19 @@ class ConversationService
     {
         foreach ([
             $meta['comment_id'] ?? null,
+            $meta['platform_comment_id'] ?? null,
             $meta['id'] ?? null,
             $meta['platform_id'] ?? null,
+            $meta['metadata']['comment_id'] ?? null,
+            $meta['metadata']['id'] ?? null,
+            $meta['comment']['id'] ?? null,
+            $meta['comment']['platform_id'] ?? null,
         ] as $value) {
             if (is_string($value) && $value !== '') {
                 return $value;
+            }
+            if (is_int($value) || is_float($value)) {
+                return (string) $value;
             }
         }
 

@@ -10,26 +10,34 @@ use App\Models\Message;
 use App\Models\Workflow;
 use Illuminate\Support\Facades\Bus;
 
+/**
+ * Comment engagement dispatcher.
+ *
+ * Default path (no workflow): shop settings `auto_reply_comments` drive AI public
+ * reply + AI private DM follow-up on every comment.
+ *
+ * Optional post_comment workflow: per-post override (fixed public text, custom DM,
+ * or disable a step). Lead-classify workflows stay separate.
+ */
 class PostCommentWorkflowRunner
 {
     public function __construct(private WorkflowService $workflows) {}
 
     /**
-     * Decide which jobs to queue for a comment on a post.
-     *
      * @return array{agent_comment: bool, fixed_comment: bool, private_dm: bool, workflow: ?Workflow}
      */
     public function plan(Business $business, int $socialAccountId, ?string $platformPostId): array
     {
-        $empty = [
-            'agent_comment' => false,
+        // Shop-default: reply from settings — no workflow required.
+        $defaults = [
+            'agent_comment' => true,
             'fixed_comment' => false,
-            'private_dm' => false,
+            'private_dm' => true,
             'workflow' => null,
         ];
 
         if (! $platformPostId) {
-            return $empty;
+            return $defaults;
         }
 
         $workflow = $this->workflows->findActiveEngagementForPost(
@@ -39,7 +47,7 @@ class PostCommentWorkflowRunner
         );
 
         if (! $workflow) {
-            return $empty;
+            return $defaults;
         }
 
         $reply = $workflow->publicReplyStep() ?? [];
@@ -49,6 +57,7 @@ class PostCommentWorkflowRunner
         $fixed = $replyOn && ($reply['mode'] ?? 'agent') === 'fixed';
 
         return [
+            // Agent public reply only when workflow leaves public reply on + agent mode.
             'agent_comment' => $replyOn && ! $fixed,
             'fixed_comment' => $fixed,
             'private_dm' => $dmOn,
@@ -68,12 +77,13 @@ class PostCommentWorkflowRunner
         bool $dmRun,
     ): void {
         $plan = $this->plan($business, $socialAccountId, $platformPostId);
+        $commentsEnabled = (bool) $business->agent?->auto_reply_comments;
 
         $agentComment = $plan['agent_comment']
             && $agentOn
-            && (bool) $business->agent?->auto_reply_comments;
+            && $commentsEnabled;
 
-        // Agent comment replies still require auto_reply_comments; fixed replies do not.
+        // Fixed workflow replies do not require auto_reply_comments.
         $fixedComment = $plan['fixed_comment'] && $runAgent && $conversationAiEnabled;
 
         if ($dmRun || $agentComment || ($message->type === 'comment' && $classify)) {
@@ -84,11 +94,14 @@ class PostCommentWorkflowRunner
             Bus::dispatch(new SendFixedCommentReplyJob($message->id, $plan['workflow']?->id));
         }
 
+        // AI / fixed private DM follow-up (settings default, or workflow override).
         if (
             $plan['private_dm']
             && $message->type === 'comment'
             && $runAgent
             && $conversationAiEnabled
+            && $agentOn
+            && $commentsEnabled
             && $platformPostId
         ) {
             Bus::dispatch(new SendPrivateReplyJob($message->id, $plan['workflow']?->id));

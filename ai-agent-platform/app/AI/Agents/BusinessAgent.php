@@ -446,7 +446,9 @@ class BusinessAgent
         if ($inbound->type === 'comment') {
             $postId = $this->commentPostId($inbound);
             if (! $postId || ! $conversation->social_account_id) {
-                return false;
+                // Still allow comment replies when post id is known via metadata later;
+                // missing social account blocks channel tools.
+                return (bool) $agent->auto_reply_comments && $postId;
             }
 
             $workflow = app(\App\Services\WorkflowService::class)->findActiveEngagementForPost(
@@ -454,11 +456,19 @@ class BusinessAgent
                 (int) $conversation->social_account_id,
                 $postId,
             );
-            $step = $workflow?->publicReplyStep() ?? [];
-            if (! $workflow || ! $workflow->stepEnabled($step) || ($step['mode'] ?? 'agent') === 'fixed') {
-                return false;
+
+            // Optional per-post workflow override: fixed text or disabled public reply.
+            if ($workflow) {
+                $step = $workflow->publicReplyStep() ?? [];
+                if (! $workflow->stepEnabled($step)) {
+                    return false;
+                }
+                if (($step['mode'] ?? 'agent') === 'fixed') {
+                    return false; // SendFixedCommentReplyJob owns the public reply
+                }
             }
 
+            // Default: shop setting — no workflow required.
             return (bool) $agent->auto_reply_comments;
         }
 

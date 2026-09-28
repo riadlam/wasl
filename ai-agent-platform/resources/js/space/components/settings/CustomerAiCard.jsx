@@ -24,7 +24,7 @@ const EMOJIS = [
 
 const REPLY_FLAGS = [
     ['reply_dms', 'Reply to DMs', 'The customer AI answers direct messages on connected channels.'],
-    ['reply_comments', 'Reply to comments', 'Answers comments on posts that have an active comment workflow.'],
+    ['reply_comments', 'Reply to comments', 'AI answers comments on your posts (uses identity + the post). Optional post workflows can override with fixed text.'],
     ['allow_order_creation', 'Capture orders', 'Lets the AI create cash-on-delivery orders once the client confirms and gives phone and wilaya.'],
 ];
 

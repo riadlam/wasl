@@ -149,7 +149,9 @@ class CampaignSlotAgent:
                 model=model,
             )
             usage = loop.get("usage") or {}
-            parsed = self._parse_json(str(loop.get("final_text") or ""))
+            # tool_runtime.run() returns "reply"; keep final_text as fallback for older callers
+            raw = str(loop.get("final_text") or loop.get("reply") or loop.get("content") or "")
+            parsed = self._parse_json(raw)
             refined = parsed.get("slots") if isinstance(parsed.get("slots"), list) else []
             by_id = {int(s.get("slot_id") or 0): s for s in refined if isinstance(s, dict) and s.get("slot_id")}
 
@@ -304,13 +306,18 @@ class CampaignSlotAgent:
                 model=model,
             )
             usage = loop.get("usage") or {}
-            parsed = self._parse_json(str(loop.get("final_text") or ""))
+            # tool_runtime.run() returns "reply"; keep final_text as fallback for older callers
+            raw = str(loop.get("final_text") or loop.get("reply") or loop.get("content") or "")
+            parsed = self._parse_json(raw)
             title = str(parsed.get("title") or slot_idea or "").strip()
             caption = str(parsed.get("caption") or "").strip()
             tags = self._norm_tags(parsed.get("hashtags") if isinstance(parsed.get("hashtags"), list) else [])
             image_prompt = str(parsed.get("image_prompt") or "").strip()
-            if not caption:
-                activity().output("draft slot empty", {"error": "empty_caption"})
+            if not caption or self._looks_like_internal_prompt(caption):
+                activity().output(
+                    "draft slot empty",
+                    {"error": "empty_or_internal_caption", "raw_preview": raw[:240]},
+                )
                 return self._empty_draft("empty_caption")
             activity().output(
                 "draft slot done",
@@ -325,13 +332,36 @@ class CampaignSlotAgent:
                     "drafter": "CampaignSlotDrafter",
                     "tools_used": [
                         (t.get("name") if isinstance(t, dict) else str(t))
-                        for t in (loop.get("tool_log") or [])
+                        for t in (loop.get("tool_log") or loop.get("tool_calls") or [])
                     ][:12],
                 },
                 "usage": self._usage(usage),
                 "runtime": "sk",
                 "error": None,
             }
+
+    def _looks_like_internal_prompt(self, text: str) -> bool:
+        """Reject captions that leak planning/agent thinking to merchants."""
+        lower = (text or "").lower()
+        needles = (
+            "do not repeat",
+            "assigned matrix",
+            "campaign_focus",
+            "hard business rules",
+            "process decisions",
+            "slot idea (owner",
+            "forbidden —",
+            "forbidden -",
+            "let me think",
+            "i need to",
+            "as an ai",
+            "campaignslot",
+            "return only json",
+            "tool_call",
+            "knowledge_search",
+            "ask_identity_agent",
+        )
+        return any(n in lower for n in needles)
 
     def _seed_plans(
         self,

@@ -173,7 +173,7 @@ class PostEnhancerAgent:
                 tenant={**tenant, "surface": "campaign_enhance", "llm_model": model},
                 model=model or tenant.get("llm_model"),
             )
-            raw = str(loop.get("final_text") or loop.get("content") or "")
+            raw = str(loop.get("final_text") or loop.get("reply") or loop.get("content") or "")
             parsed = self._parse_json(raw)
             usage = loop.get("usage") or {}
             caption = str(parsed.get("caption") or "").strip() or prev

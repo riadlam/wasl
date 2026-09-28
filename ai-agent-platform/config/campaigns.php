@@ -11,6 +11,10 @@ return [
     // A dispatched slot that is still pending after this long is queued again.
     'redispatch_after_minutes' => (int) env('CAMPAIGNS_REDISPATCH_AFTER_MINUTES', 30),
 
+    // Max number of slots generating in parallel per campaign.
+    // Allows multiple drafts while awaiting_approval no longer blocks.
+    'max_parallel_drafts' => (int) env('CAMPAIGNS_MAX_PARALLEL_DRAFTS', 3),
+
     'queue' => env('CAMPAIGNS_QUEUE', 'campaigns'),
 
     'log_channel' => env('CAMPAIGNS_LOG_CHANNEL', 'campaigns'),

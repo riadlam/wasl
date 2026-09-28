@@ -61,9 +61,32 @@ final class MerchantSafeMessage
         }
 
         $out = [];
-        foreach (['understanding', 'product_focus', 'brief_notes', 'focus'] as $key) {
-            if (array_key_exists($key, $planMeta) && (is_string($planMeta[$key]) || is_array($planMeta[$key]))) {
+        foreach (['understanding', 'product_focus', 'brief_notes', 'focus', 'matrix_ready', 'matrix_version'] as $key) {
+            if (array_key_exists($key, $planMeta) && (is_string($planMeta[$key]) || is_array($planMeta[$key]) || is_bool($planMeta[$key]))) {
                 $out[$key] = $planMeta[$key];
+            }
+        }
+
+        // Include trimmed slot_plans with only owner-safe fields (no internal agent data)
+        if (isset($planMeta['slot_plans']) && is_array($planMeta['slot_plans'])) {
+            $safeSlotPlans = [];
+            $safeFields = ['idea', 'content_angle', 'content_pillar', 'objective', 'day_index', 'kind'];
+            foreach ($planMeta['slot_plans'] as $sid => $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+                $safeRow = [];
+                foreach ($safeFields as $field) {
+                    if (isset($row[$field]) && (is_string($row[$field]) || is_int($row[$field]))) {
+                        $safeRow[$field] = $row[$field];
+                    }
+                }
+                if ($safeRow !== []) {
+                    $safeSlotPlans[$sid] = $safeRow;
+                }
+            }
+            if ($safeSlotPlans !== []) {
+                $out['slot_plans'] = $safeSlotPlans;
             }
         }
 

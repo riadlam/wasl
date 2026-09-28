@@ -83,6 +83,15 @@ class AiCampaignSlot extends Model
      */
     public function toApiArray(): array
     {
+        // Get content_pillar from campaign plan_meta if available
+        $contentPillar = null;
+        if ($this->relationLoaded('campaign') && $this->campaign) {
+            $planMeta = is_array($this->campaign->plan_meta) ? $this->campaign->plan_meta : [];
+            $slotPlans = is_array($planMeta['slot_plans'] ?? null) ? $planMeta['slot_plans'] : [];
+            $slotPlan = $slotPlans[(string) $this->id] ?? $slotPlans[$this->id] ?? [];
+            $contentPillar = trim((string) ($slotPlan['content_pillar'] ?? '')) ?: null;
+        }
+
         return [
             'id' => $this->id,
             'day_index' => $this->day_index,
@@ -91,6 +100,7 @@ class AiCampaignSlot extends Model
             'status' => $this->status,
             'title' => $this->title,
             'caption' => $this->caption,
+            'content_pillar' => $contentPillar,
             'error' => $this->error !== null && $this->error !== ''
                 ? \App\Support\MerchantSafeMessage::of((string) $this->error, 'This slot failed. Try again or regenerate.')
                 : null,

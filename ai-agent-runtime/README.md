@@ -25,6 +25,18 @@ uvicorn app.main:app --host 0.0.0.0 --port 8090 --reload
 | POST | `/v1/knowledge/ingest` | Chunk + embed upsert |
 | POST | `/v1/knowledge/search` | Tenant-scoped vector search |
 | POST | `/v1/approvals/{id}/resume` | HITL resume after Laravel confirm |
+| POST | `/v1/memory/remember` | Store durable memory (campaign briefs, etc.) |
+| POST | `/v1/campaigns/plan_slots` | Stage 1: Build content matrix for all slots |
+| POST | `/v1/campaigns/draft_slot` | Stage 2: Draft one slot with assigned matrix row |
+| POST | `/v1/campaigns/enhance` | Regenerate/enhance an existing caption |
+
+### Campaign flow (Plan globally, generate locally)
+
+1. **Stage 1 `plan_slots`** — Called once at launch. Receives all slots + image analyses + understanding + `hard_business_rules` (SHOULD/MUST NOT). Returns a content matrix: idea, offer, content_pillar, content_angle, hook_type, cta_type, tone, story_type per slot. Stored in `plan_meta.slot_plans`.
+
+2. **Stage 2 `draft_slot`** — Called per slot. Receives the assigned matrix row + structured DO-NOT-REPEAT list + `hard_business_rules`. Uses RAG (identity, memories, recent posts) to draft the caption. Returns title, caption, hashtags, image_prompt.
+
+Memory key for campaign context: `ai_campaign:{id}` — survives approval/cancel.
 
 Auth: `X-Runtime-Key` + `X-Business-Id` (+ optional `X-User-Id`, `X-Correlation-Id`, `X-Surface`).
 

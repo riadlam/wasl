@@ -260,6 +260,8 @@ async def campaign_plan_slots(
                 product_focus=body.product_focus or "",
                 model=body.llm_model,
                 correlation_id=str(tenant.get("correlation_id") or ""),
+                hard_business_rules=body.hard_business_rules or "",
+                process_decisions=body.process_decisions or "",
             )
             return CampaignPlanSlotsResponse(**result)
         except Exception as exc:

@@ -15,15 +15,34 @@ logger = logging.getLogger(__name__)
 
 PLAN_SYSTEM = """You are CampaignSlotPlanner for Wasl Maghreb campaigns.
 
-Given a campaign schedule of slots and per-image vision analyses, assign a DISTINCT short idea
-(title, 4–10 words) and offer angle to EACH slot.
+Given a campaign schedule of slots and per-image vision analyses (or focus prompt), build a CONTENT MATRIX
+with a DISTINCT idea and content strategy for EACH slot. The PRIMARY GOAL: no duplicate ideas, angles, hooks,
+or core messages across the entire campaign.
 
 Rules:
-- Different product images = different offers. Never give two posts the same idea/offer.
-- Stories must NOT clone the feed post idea — use a story beat (urgency, tip, behind-the-scenes) for the SAME offer as that day's post when they share an image.
-- Stay faithful to vision descriptions; do not invent products.
-- Return ONLY JSON:
-  {"slots":[{"slot_id":123,"idea":"...","offer":"...","angle":"..."}]}
+- Different product images = different offers. Never give two posts the same idea/offer/angle.
+- Stories must NOT clone the feed post idea — use a story beat (urgency, tip, behind-the-scenes) for the SAME offer.
+- Vary content_pillar across posts: Education, Entertainment, Promotion, Connection, Social Proof, FAQ, Behind-scenes.
+- Vary hook_type per slot: Question, Statement, Statistic, Story, Command, Curiosity.
+- Vary cta_type per slot: Comment, DM, Link, Save, Share, Visit.
+- Images are visual anchors, not the strategy — each image gets a different narrative angle (intro / problem / benefit / how-to / FAQ / story / comparison / offer).
+- Stay faithful to vision descriptions / focus prompt; do not invent products.
+- HARD BUSINESS RULES (Should / Must not) OVERRIDE your choices — never plan a slot that violates MUST NOT.
+
+Return ONLY JSON:
+{"slots":[{
+  "slot_id":123,
+  "idea":"4–10 word title",
+  "offer":"product/benefit featured",
+  "content_pillar":"Education|Promotion|...",
+  "content_angle":"specific angle for this post",
+  "objective":"Reach|Trust|Consideration|Conversion",
+  "hook_type":"Question|Statement|...",
+  "cta_type":"Comment|DM|...",
+  "tone":"Helpful|Urgent|Friendly|...",
+  "story_type":"Poll|Countdown|Swipe|Text" (only for stories),
+  "avoid_topics":["angles already assigned to other slots"]
+}]}
 """
 
 DRAFT_SYSTEM = """You are CampaignSlotDrafter — Maghreb social caption writer for ONE Wasl campaign slot.
@@ -77,6 +96,8 @@ class CampaignSlotAgent:
         product_focus: str = "",
         model: str | None = None,
         correlation_id: str = "",
+        hard_business_rules: str = "",
+        process_decisions: str = "",
     ) -> dict[str, Any]:
         business_id = int(tenant.get("business_id") or 0)
         with activity().turn(
@@ -91,6 +112,7 @@ class CampaignSlotAgent:
                     "slots": len(slots),
                     "analyses": len(image_analyses or []),
                     "product_focus": (product_focus or "")[:200],
+                    "has_hard_rules": bool((hard_business_rules or "").strip()),
                 },
             )
             if not slots:
@@ -98,15 +120,25 @@ class CampaignSlotAgent:
 
             # Deterministic seeds first — LLM only refines wording.
             seeded = self._seed_plans(slots, image_analyses or [], product_focus)
+
+            # Build system prompt with hard rules if present
+            rules = (hard_business_rules or "").strip()
+            system = PLAN_SYSTEM
+            if rules:
+                system = f"{PLAN_SYSTEM}\n\n{rules}\n"
+
             user_payload = {
-                "task": "Refine distinct idea/offer/angle per slot. Keep slot_ids. Return JSON only.",
+                "task": "Build content matrix with distinct idea/pillar/angle/hook/CTA per slot. Keep slot_ids. Return JSON only.",
                 "understanding": (understanding or "")[:4000],
                 "product_focus": product_focus or "",
                 "image_analyses": (image_analyses or [])[:12],
                 "seeded_slots": seeded,
+                "total_slots": len(slots),
+                "hard_business_rules": rules or "(none)",
+                "process_decisions": (process_decisions or "").strip() or "(none)",
             }
             messages = [
-                {"role": "system", "content": PLAN_SYSTEM},
+                {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
             ]
             # Planning is a single completion (no tools) — fast + logged.
@@ -120,6 +152,13 @@ class CampaignSlotAgent:
             parsed = self._parse_json(str(loop.get("final_text") or ""))
             refined = parsed.get("slots") if isinstance(parsed.get("slots"), list) else []
             by_id = {int(s.get("slot_id") or 0): s for s in refined if isinstance(s, dict) and s.get("slot_id")}
+
+            # Matrix fields to extract from LLM response
+            matrix_fields = [
+                "content_pillar", "content_angle", "objective",
+                "hook_type", "cta_type", "tone", "story_type", "avoid_topics"
+            ]
+
             out_slots: list[dict[str, Any]] = []
             for seed in seeded:
                 sid = int(seed["slot_id"])
@@ -127,17 +166,31 @@ class CampaignSlotAgent:
                 idea = str(hit.get("idea") or seed.get("idea") or "").strip() or str(seed.get("idea") or "")
                 offer = str(hit.get("offer") or seed.get("offer") or "").strip() or str(seed.get("offer") or "")
                 angle = str(hit.get("angle") or seed.get("angle") or "").strip() or str(seed.get("angle") or "")
-                out_slots.append(
-                    {
-                        "slot_id": sid,
-                        "idea": idea[:160],
-                        "offer": offer[:400],
-                        "angle": angle[:200],
-                        "asset_id": seed.get("asset_id"),
-                        "kind": seed.get("kind"),
-                        "day_index": seed.get("day_index"),
-                    }
-                )
+
+                slot_out: dict[str, Any] = {
+                    "slot_id": sid,
+                    "idea": idea[:160],
+                    "offer": offer[:400],
+                    "angle": angle[:200],
+                    "asset_id": seed.get("asset_id"),
+                    "kind": seed.get("kind"),
+                    "day_index": seed.get("day_index"),
+                }
+
+                # Add matrix fields from LLM or defaults
+                for field in matrix_fields:
+                    val = hit.get(field)
+                    if field == "avoid_topics":
+                        slot_out[field] = val if isinstance(val, list) else []
+                    else:
+                        slot_out[field] = str(val or "").strip()[:100] if val else ""
+
+                # Default content_angle to angle if not provided
+                if not slot_out.get("content_angle") and angle:
+                    slot_out["content_angle"] = angle[:100]
+
+                out_slots.append(slot_out)
+
             activity().output("plan slots done", {"count": len(out_slots)})
             return {
                 "slots": out_slots,

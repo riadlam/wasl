@@ -148,6 +148,12 @@ class AiCampaignService
             $understanding = trim((string) ($planMeta['understanding'] ?? $brief));
             $processLines = $this->formatProcessDecisions($planMeta);
 
+            // Get hard business rules (Should / Must not)
+            $hardRules = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+
+            // Build content matrix summary
+            $matrixSummary = $this->formatMatrixSummary($planMeta);
+
             $parts = array_filter([
                 'Campaign knowledge (owner launched after brief). Use for every scheduled post in this campaign.',
                 'Campaign id: '.$campaign->id,
@@ -158,7 +164,9 @@ class AiCampaignService
                 ! empty($planMeta['plan_notes']) ? 'Plan: '.$planMeta['plan_notes'] : null,
                 ! empty($planMeta['product_focus']) ? 'Product focus: '.$planMeta['product_focus'] : null,
                 ! empty($planMeta['analysis']) ? 'Analysis: '.$planMeta['analysis'] : null,
+                $hardRules !== '' ? $hardRules : null,
                 $processLines !== '' ? $processLines : null,
+                $matrixSummary !== '' ? $matrixSummary : null,
                 $tease !== '' ? "Accepted tease:\n{$tease}" : null,
             ]);
             $content = implode("\n\n", $parts);
@@ -200,6 +208,96 @@ class AiCampaignService
         } catch (Throwable $e) {
             Log::warning('campaigns.memory_ingest_failed', [
                 'campaign_id' => $campaign->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Format the content matrix as a numbered summary for memory.
+     */
+    private function formatMatrixSummary(array $planMeta): string
+    {
+        $slotPlans = is_array($planMeta['slot_plans'] ?? null) ? $planMeta['slot_plans'] : [];
+        if ($slotPlans === []) {
+            return '';
+        }
+
+        $lines = ['CONTENT MATRIX (do not repeat angles/hooks/CTAs):'];
+        $idx = 1;
+        foreach ($slotPlans as $sid => $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $day = $row['day_index'] ?? '?';
+            $kind = $row['kind'] ?? 'post';
+            $pillar = $row['content_pillar'] ?? '';
+            $angle = $row['content_angle'] ?? $row['angle'] ?? '';
+            $hook = $row['hook_type'] ?? '';
+            $cta = $row['cta_type'] ?? '';
+            $idea = $row['idea'] ?? '';
+
+            $parts = array_filter([
+                "Post {$idx} (day {$day}, {$kind})",
+                $angle !== '' ? "angle: {$angle}" : null,
+                $pillar !== '' ? "pillar: {$pillar}" : null,
+                $hook !== '' ? "hook: {$hook}" : null,
+                $cta !== '' ? "CTA: {$cta}" : null,
+            ]);
+            $lines[] = '- '.implode(', ', $parts);
+            $idx++;
+        }
+
+        return count($lines) > 1 ? implode("\n", $lines) : '';
+    }
+
+    /**
+     * Store used-slot metadata in campaign memory after a successful draft.
+     * Persists what was generated so DO-NOT-REPEAT can be built from DB state.
+     */
+    public function persistSlotGeneratedMetadata(AiCampaign $campaign, AiCampaignSlot $slot, array $draftResult): void
+    {
+        try {
+            $planMeta = is_array($campaign->plan_meta) ? $campaign->plan_meta : [];
+            $slotPlans = is_array($planMeta['slot_plans'] ?? null) ? $planMeta['slot_plans'] : [];
+
+            $sid = (string) $slot->id;
+            if (! isset($slotPlans[$sid])) {
+                $slotPlans[$sid] = [];
+            }
+
+            // Extract key metadata from the draft result
+            $caption = trim((string) ($draftResult['caption'] ?? ''));
+            $title = trim((string) ($draftResult['title'] ?? ''));
+
+            // Build a fingerprint from the caption (first 80 chars + hash)
+            $fingerprint = $caption !== ''
+                ? mb_substr($caption, 0, 80).'|'.substr(md5($caption), 0, 8)
+                : '';
+
+            // Store generated metadata
+            $slotPlans[$sid]['generated'] = array_filter([
+                'title' => $title !== '' ? $title : null,
+                'caption_fingerprint' => $fingerprint !== '' ? $fingerprint : null,
+                'generated_at' => now()->toIso8601String(),
+                // Preserve the planned values as what was actually used
+                'content_angle' => $slotPlans[$sid]['content_angle'] ?? $slotPlans[$sid]['angle'] ?? null,
+                'hook_type' => $slotPlans[$sid]['hook_type'] ?? null,
+                'cta_type' => $slotPlans[$sid]['cta_type'] ?? null,
+                'content_pillar' => $slotPlans[$sid]['content_pillar'] ?? null,
+            ], fn ($v) => $v !== null && $v !== '');
+
+            $planMeta['slot_plans'] = $slotPlans;
+            $campaign->update(['plan_meta' => $planMeta]);
+
+            Log::info('campaigns.slot_generated_metadata_saved', [
+                'campaign_id' => $campaign->id,
+                'slot_id' => $slot->id,
+            ]);
+        } catch (Throwable $e) {
+            Log::warning('campaigns.slot_generated_metadata_failed', [
+                'campaign_id' => $campaign->id,
+                'slot_id' => $slot->id,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -256,7 +354,7 @@ class AiCampaignService
     }
 
     /**
-     * Build focus for one slot from campaign plan_meta + THIS slot's planned idea/offer.
+     * Build focus for one slot from campaign plan_meta + THIS slot's planned idea/offer + matrix row.
      */
     private function slotFocusFromCampaign(AiCampaign $campaign, AiCampaignSlot $slot): string
     {
@@ -266,7 +364,12 @@ class AiCampaignService
         $multi = ! empty($planMeta['multi_product'])
             || (is_array($planMeta['image_analyses'] ?? null) && count($planMeta['image_analyses']) > 1);
 
+        // Campaign context
+        $slotPlans = is_array($planMeta['slot_plans'] ?? null) ? $planMeta['slot_plans'] : [];
+        $totalSlots = count($slotPlans);
+
         $bits = array_filter([
+            "CAMPAIGN: {$campaign->day_count} days, {$totalSlots} total posts",
             ! empty($planMeta['understanding']) ? "UNDERSTANDING:\n".$planMeta['understanding'] : null,
             ! empty($planMeta['brief_notes']) && ($planMeta['brief_notes'] ?? '') !== ($planMeta['understanding'] ?? '')
                 ? "BRIEF NOTES:\n".$planMeta['brief_notes']
@@ -275,14 +378,29 @@ class AiCampaignService
             $this->formatProcessDecisions($planMeta) ?: null,
         ]);
 
+        // Current post info
+        $bits[] = "CURRENT POST: slot {$slot->id}, day {$slot->day_index}, {$slot->slot_kind}";
+
         if ($slotPlan !== []) {
             $bits[] = 'SLOT IDEA (owner-facing title for THIS slot only): '.($slotPlan['idea'] ?? $slot->title ?? '');
             if (! empty($slotPlan['offer'])) {
                 $bits[] = 'THIS SLOT OFFER (feature only this): '.$slotPlan['offer'];
             }
-            if (! empty($slotPlan['angle'])) {
-                $bits[] = 'ANGLE: '.$slotPlan['angle'];
+
+            // Matrix row - assigned strategy for THIS slot
+            $matrixParts = array_filter([
+                ! empty($slotPlan['content_pillar']) ? 'pillar: '.$slotPlan['content_pillar'] : null,
+                ! empty($slotPlan['content_angle']) ? 'angle: '.$slotPlan['content_angle'] : (! empty($slotPlan['angle']) ? 'angle: '.$slotPlan['angle'] : null),
+                ! empty($slotPlan['objective']) ? 'objective: '.$slotPlan['objective'] : null,
+                ! empty($slotPlan['hook_type']) ? 'hook_type: '.$slotPlan['hook_type'] : null,
+                ! empty($slotPlan['cta_type']) ? 'cta_type: '.$slotPlan['cta_type'] : null,
+                ! empty($slotPlan['tone']) ? 'tone: '.$slotPlan['tone'] : null,
+                $slot->slot_kind === AiCampaignSlot::KIND_STORY && ! empty($slotPlan['story_type']) ? 'story_type: '.$slotPlan['story_type'] : null,
+            ]);
+            if ($matrixParts !== []) {
+                $bits[] = 'ASSIGNED MATRIX ROW (your strategy for THIS slot): '.implode(', ', $matrixParts);
             }
+
             if (! empty($slotPlan['image_description'])) {
                 $bits[] = "THIS IMAGE ANALYSIS:\n".$slotPlan['image_description'];
             }
@@ -294,9 +412,12 @@ class AiCampaignService
             $bits[] = 'Campaign has multiple offers — do NOT default to lead focus "'.$planMeta['product_focus'].'" unless THIS slot\'s image matches it.';
         }
 
-        $forbidden = $this->previousHooks($campaign, $slot);
-        $bits[] = 'FORBIDDEN — do not reuse these hooks/ideas from other slots: '.$forbidden;
-        $bits[] = 'Draft THIS slot only (id '.$slot->id.', '.$slot->slot_kind.', day '.$slot->day_index.'). Stay faithful to THIS slot idea/offer. Do not invent products.';
+        // Structured DO NOT REPEAT
+        $forbidden = $this->buildDoNotRepeat($campaign, $slot);
+        $bits[] = $forbidden;
+
+        $bits[] = 'Draft THIS slot only (id '.$slot->id.', '.$slot->slot_kind.', day '.$slot->day_index.'). Stay faithful to THIS slot\'s assigned matrix row. Do not invent products.';
+        $bits[] = 'Campaign-wide rules: no same hook structure, no same CTA, no same core message, not a continuation of another post.';
 
         if ($bits === []) {
             return $focus;
@@ -306,7 +427,7 @@ class AiCampaignService
     }
 
     /**
-     * @return array{idea?: string, offer?: string, angle?: string, asset_id?: int|null, image_description?: string}
+     * @return array{idea?: string, offer?: string, angle?: string, asset_id?: int|null, image_description?: string, content_pillar?: string, content_angle?: string, objective?: string, hook_type?: string, cta_type?: string, tone?: string, story_type?: string}
      */
     private function slotPlanFor(AiCampaign $campaign, AiCampaignSlot $slot): array
     {
@@ -325,12 +446,20 @@ class AiCampaignService
             $offer = mb_substr($analysis, 0, 160);
         }
 
+        // Include all matrix fields
         return array_filter([
             'idea' => $idea !== '' ? $idea : null,
             'offer' => $offer !== '' ? $offer : null,
             'angle' => trim((string) ($row['angle'] ?? '')) ?: null,
             'asset_id' => $assetId > 0 ? $assetId : null,
             'image_description' => $analysis !== '' ? $analysis : null,
+            'content_pillar' => trim((string) ($row['content_pillar'] ?? '')) ?: null,
+            'content_angle' => trim((string) ($row['content_angle'] ?? $row['angle'] ?? '')) ?: null,
+            'objective' => trim((string) ($row['objective'] ?? '')) ?: null,
+            'hook_type' => trim((string) ($row['hook_type'] ?? '')) ?: null,
+            'cta_type' => trim((string) ($row['cta_type'] ?? '')) ?: null,
+            'tone' => trim((string) ($row['tone'] ?? '')) ?: null,
+            'story_type' => trim((string) ($row['story_type'] ?? '')) ?: null,
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -360,6 +489,7 @@ class AiCampaignService
 
     /**
      * After expandSlots: assign a distinct planned idea to every slot so drafts cannot all collapse to one offer.
+     * Builds a full content matrix with pillars, angles, hooks, CTAs to prevent duplication.
      */
     private function assignSlotIdeas(Business $business, User $user, AiCampaign $campaign): void
     {
@@ -383,6 +513,11 @@ class AiCampaignService
 
         $planned = $this->deterministicSlotPlans($payloadSlots, $analyses, $productFocus);
 
+        // Get hard business rules (Should / Must not)
+        $hardRules = app(\App\Services\Agents\BehaviorRulesPrompt::class)->block($business);
+        // Get process decisions (campaign confirm cards YES/NO)
+        $processDecisions = $this->formatProcessDecisions($planMeta);
+
         $business->loadMissing('agentSettings');
         if (AiRuntime::usesSk($business)) {
             $sk = $this->sk->planCampaignSlots(
@@ -393,8 +528,15 @@ class AiCampaignService
                 $understanding,
                 $productFocus,
                 $business->agentSettings?->llm_model,
+                $hardRules,
+                $processDecisions,
             );
             if (empty($sk['error']) && is_array($sk['slots'] ?? null) && $sk['slots'] !== []) {
+                // Matrix fields to merge from SK response
+                $matrixFields = [
+                    'idea', 'offer', 'angle', 'content_pillar', 'content_angle',
+                    'objective', 'hook_type', 'cta_type', 'tone', 'story_type', 'avoid_topics',
+                ];
                 foreach ($sk['slots'] as $row) {
                     if (! is_array($row) || empty($row['slot_id'])) {
                         continue;
@@ -403,10 +545,17 @@ class AiCampaignService
                     if (! isset($planned[$sid])) {
                         continue;
                     }
-                    foreach (['idea', 'offer', 'angle'] as $key) {
-                        $val = trim((string) ($row[$key] ?? ''));
-                        if ($val !== '') {
-                            $planned[$sid][$key] = $val;
+                    foreach ($matrixFields as $key) {
+                        $val = $row[$key] ?? null;
+                        if ($key === 'avoid_topics') {
+                            if (is_array($val) && $val !== []) {
+                                $planned[$sid][$key] = $val;
+                            }
+                        } else {
+                            $val = trim((string) ($val ?? ''));
+                            if ($val !== '') {
+                                $planned[$sid][$key] = $val;
+                            }
                         }
                     }
                 }
@@ -418,7 +567,12 @@ class AiCampaignService
             }
         }
 
+        // Programmatic diversity pass: enforce max occurrences
+        $planned = $this->enforceDiversity($planned);
+
         $planMeta['slot_plans'] = $planned;
+        $planMeta['matrix_ready'] = true;
+        $planMeta['matrix_version'] = now()->toIso8601String();
         $campaign->update(['plan_meta' => $planMeta]);
 
         foreach ($slots as $slot) {
@@ -426,17 +580,93 @@ class AiCampaignService
             if (! is_array($row)) {
                 continue;
             }
-            $idea = trim((string) ($row['idea'] ?? ''));
-            if ($idea === '') {
+            // Use content_angle or idea for title
+            $title = trim((string) ($row['content_angle'] ?? $row['idea'] ?? ''));
+            if ($title === '') {
                 continue;
             }
-            $slot->update(['title' => mb_substr($idea, 0, 160)]);
+            $slot->update(['title' => mb_substr($title, 0, 160)]);
         }
 
         Log::info('campaigns.slot_plans_assigned', [
             'campaign_id' => $campaign->id,
             'count' => count($planned),
+            'matrix_ready' => true,
         ]);
+    }
+
+    /**
+     * Programmatic diversity pass: reassign duplicates to ensure variety.
+     * max same content_angle: 1, max same hook_type: 2, max same cta_type: 3
+     *
+     * @param  array<string, array<string, mixed>>  $planned
+     * @return array<string, array<string, mixed>>
+     */
+    private function enforceDiversity(array $planned): array
+    {
+        $pillarPool = ['Education', 'Entertainment', 'Promotion', 'Connection', 'Social Proof', 'FAQ', 'Behind-scenes'];
+        $hookPool = ['Question', 'Statement', 'Statistic', 'Story', 'Command', 'Curiosity'];
+        $ctaPool = ['Comment', 'DM', 'Link', 'Save', 'Share', 'Visit'];
+
+        // Count occurrences
+        $angleCounts = [];
+        $hookCounts = [];
+        $ctaCounts = [];
+
+        foreach ($planned as $sid => $row) {
+            $angle = strtolower(trim((string) ($row['content_angle'] ?? '')));
+            $hook = strtolower(trim((string) ($row['hook_type'] ?? '')));
+            $cta = strtolower(trim((string) ($row['cta_type'] ?? '')));
+
+            if ($angle !== '') {
+                $angleCounts[$angle] = ($angleCounts[$angle] ?? 0) + 1;
+            }
+            if ($hook !== '') {
+                $hookCounts[$hook] = ($hookCounts[$hook] ?? 0) + 1;
+            }
+            if ($cta !== '') {
+                $ctaCounts[$cta] = ($ctaCounts[$cta] ?? 0) + 1;
+            }
+        }
+
+        // Reassign duplicates
+        $pillarIdx = 0;
+        $hookIdx = 0;
+        $ctaIdx = 0;
+
+        foreach ($planned as $sid => &$row) {
+            $angle = strtolower(trim((string) ($row['content_angle'] ?? '')));
+            $hook = strtolower(trim((string) ($row['hook_type'] ?? '')));
+            $cta = strtolower(trim((string) ($row['cta_type'] ?? '')));
+
+            // Max 1 same content_angle
+            if ($angle !== '' && ($angleCounts[$angle] ?? 0) > 1) {
+                $angleCounts[$angle]--;
+                $newPillar = $pillarPool[$pillarIdx % count($pillarPool)];
+                $pillarIdx++;
+                $row['content_angle'] = $newPillar.' angle';
+                $row['content_pillar'] = $newPillar;
+            }
+
+            // Max 2 same hook_type
+            if ($hook !== '' && ($hookCounts[$hook] ?? 0) > 2) {
+                $hookCounts[$hook]--;
+                $newHook = $hookPool[$hookIdx % count($hookPool)];
+                $hookIdx++;
+                $row['hook_type'] = $newHook;
+            }
+
+            // Max 3 same cta_type
+            if ($cta !== '' && ($ctaCounts[$cta] ?? 0) > 3) {
+                $ctaCounts[$cta]--;
+                $newCta = $ctaPool[$ctaIdx % count($ctaPool)];
+                $ctaIdx++;
+                $row['cta_type'] = $newCta;
+            }
+        }
+        unset($row);
+
+        return $planned;
     }
 
     /**
@@ -800,8 +1030,9 @@ class AiCampaignService
     }
 
     /**
-     * Queue the next due slot per campaign — one at a time (no parallel drafts).
-     * Skips a campaign while any slot is generating / awaiting Telegram approval / publishing.
+     * Queue the next due slot per campaign — with parallel draft limit.
+     * Does NOT block on awaiting_approval — approval is independent of generation.
+     * Respects max_parallel_drafts per campaign to prevent overwhelming the AI.
      */
     public function dispatchDue(?AiCampaign $only = null): int
     {
@@ -810,6 +1041,7 @@ class AiCampaignService
         $draftAsap = (bool) config('campaigns.draft_asap', true);
         $lookahead = max(5, (int) config('campaigns.lookahead_minutes', 180));
         $stale = now()->subMinutes(max(5, (int) config('campaigns.redispatch_after_minutes', 30)));
+        $maxParallel = max(1, (int) config('campaigns.max_parallel_drafts', 3));
 
         $slots = AiCampaignSlot::query()
             ->whereIn('status', [AiCampaignSlot::STATUS_PENDING, AiCampaignSlot::STATUS_REGEN_REQUESTED])
@@ -825,14 +1057,14 @@ class AiCampaignService
             ->limit(200)
             ->get();
 
-        $busyCampaignIds = AiCampaignSlot::query()
+        // Count actively generating slots per campaign (does NOT include awaiting_approval)
+        $generatingCounts = AiCampaignSlot::query()
             ->where(function ($q) use ($stale) {
                 $q->whereIn('status', [
                     AiCampaignSlot::STATUS_GENERATING,
-                    AiCampaignSlot::STATUS_AWAITING_APPROVAL,
                     AiCampaignSlot::STATUS_PUBLISHING,
                 ])->orWhere(function ($q2) use ($stale) {
-                    // Queued but not yet claimed by the worker — still blocks the next draft.
+                    // Queued but not yet claimed by the worker — counts toward parallel limit.
                     $q2->whereIn('status', [
                         AiCampaignSlot::STATUS_PENDING,
                         AiCampaignSlot::STATUS_REGEN_REQUESTED,
@@ -842,25 +1074,31 @@ class AiCampaignService
                 });
             })
             ->when($only, fn ($q) => $q->where('ai_campaign_id', $only->id))
-            ->pluck('ai_campaign_id')
-            ->unique()
+            ->selectRaw('ai_campaign_id, COUNT(*) as cnt')
+            ->groupBy('ai_campaign_id')
+            ->pluck('cnt', 'ai_campaign_id')
             ->all();
-        $busyLookup = array_fill_keys(array_map('intval', $busyCampaignIds), true);
 
         $dispatched = 0;
-        $startedCampaign = [];
+        $startedThisRun = [];
         foreach ($slots as $slot) {
             $campaignId = (int) $slot->ai_campaign_id;
-            if (isset($busyLookup[$campaignId]) || isset($startedCampaign[$campaignId])) {
+
+            // How many are currently generating for this campaign (including ones started this run)?
+            $currentlyGenerating = (int) ($generatingCounts[$campaignId] ?? 0) + (int) ($startedThisRun[$campaignId] ?? 0);
+
+            // Skip if at or above the parallel limit
+            if ($currentlyGenerating >= $maxParallel) {
                 continue;
             }
+
             if ($slot->status === AiCampaignSlot::STATUS_REGEN_REQUESTED) {
                 $slot->update(['status' => AiCampaignSlot::STATUS_PENDING]);
             }
             $slot->update(['dispatched_at' => now()]);
             try {
                 ProcessCampaignSlot::dispatch($slot->id)->onQueue(self::queue());
-                $startedCampaign[$campaignId] = true;
+                $startedThisRun[$campaignId] = ($startedThisRun[$campaignId] ?? 0) + 1;
                 $dispatched++;
             } catch (Throwable $e) {
                 report($e);
@@ -1050,6 +1288,9 @@ class AiCampaignService
                     'title' => $draft['title'] !== '' ? $draft['title'] : null,
                     'caption' => $caption,
                 ]);
+
+                // Persist generated metadata to slot_plans for DO-NOT-REPEAT
+                $this->persistSlotGeneratedMetadata($campaign, $slot, $draft);
 
                 if ($isRegen && isset($planMeta['regen_seeds'][(string) $slot->id])) {
                     unset($planMeta['regen_seeds'][(string) $slot->id]);
@@ -1395,6 +1636,77 @@ class AiCampaignService
         }
     }
 
+    /**
+     * Build structured DO-NOT-REPEAT from slot_plans matrix + already-generated content.
+     */
+    private function buildDoNotRepeat(AiCampaign $campaign, AiCampaignSlot $currentSlot): string
+    {
+        $planMeta = is_array($campaign->plan_meta) ? $campaign->plan_meta : [];
+        $slotPlans = is_array($planMeta['slot_plans'] ?? null) ? $planMeta['slot_plans'] : [];
+
+        $angles = [];
+        $hooks = [];
+        $ctas = [];
+        $pillars = [];
+        $generatedHooks = [];
+
+        foreach ($slotPlans as $sid => $row) {
+            if ((string) $sid === (string) $currentSlot->id || ! is_array($row)) {
+                continue;
+            }
+
+            // Collect planned matrix values from other slots
+            $angle = trim((string) ($row['content_angle'] ?? $row['angle'] ?? ''));
+            $hook = trim((string) ($row['hook_type'] ?? ''));
+            $cta = trim((string) ($row['cta_type'] ?? ''));
+            $pillar = trim((string) ($row['content_pillar'] ?? ''));
+
+            if ($angle !== '' && ! in_array($angle, $angles, true)) {
+                $angles[] = $angle;
+            }
+            if ($hook !== '' && ! in_array($hook, $hooks, true)) {
+                $hooks[] = $hook;
+            }
+            if ($cta !== '' && ! in_array($cta, $ctas, true)) {
+                $ctas[] = $cta;
+            }
+            if ($pillar !== '' && ! in_array($pillar, $pillars, true)) {
+                $pillars[] = $pillar;
+            }
+
+            // Check if this slot was already generated
+            $generated = is_array($row['generated'] ?? null) ? $row['generated'] : [];
+            $title = trim((string) ($generated['title'] ?? $row['idea'] ?? ''));
+            if ($title !== '' && ! in_array($title, $generatedHooks, true)) {
+                $generatedHooks[] = $title;
+            }
+        }
+
+        // Also get actual hooks from DB for slots already drafted
+        $dbHooks = $this->previousHooks($campaign, $currentSlot);
+
+        $lines = ['DO NOT REPEAT (other slots in this campaign):'];
+
+        if ($angles !== []) {
+            $lines[] = '- Angles already assigned: '.implode(', ', array_slice($angles, 0, 10));
+        }
+        if ($hooks !== []) {
+            $lines[] = '- Hook types used: '.implode(', ', array_slice($hooks, 0, 8));
+        }
+        if ($ctas !== []) {
+            $lines[] = '- CTA types used: '.implode(', ', array_slice($ctas, 0, 8));
+        }
+        if ($generatedHooks !== [] || $dbHooks !== '(none yet)') {
+            $hookList = $generatedHooks !== [] ? implode(' | ', array_slice($generatedHooks, 0, 8)) : $dbHooks;
+            $lines[] = '- Previous hooks/titles: '.$hookList;
+        }
+
+        return count($lines) > 1 ? implode("\n", $lines) : 'DO NOT REPEAT: (none yet — this is the first slot)';
+    }
+
+    /**
+     * Get previous hooks/titles from already-drafted slots (legacy method, still used).
+     */
     private function previousHooks(AiCampaign $campaign, AiCampaignSlot $slot): string
     {
         $hooks = $campaign->slots()

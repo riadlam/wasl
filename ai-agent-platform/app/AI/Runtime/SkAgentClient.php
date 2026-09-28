@@ -618,6 +618,8 @@ class SkAgentClient
         string $understanding = '',
         string $productFocus = '',
         ?string $llmModel = null,
+        string $hardBusinessRules = '',
+        string $processDecisions = '',
     ): array {
         try {
             $response = Http::timeout((int) config('ai_runtime.timeout', 200))
@@ -628,6 +630,8 @@ class SkAgentClient
                     'understanding' => $understanding,
                     'product_focus' => $productFocus,
                     'llm_model' => $this->resolveProviderModel($llmModel),
+                    'hard_business_rules' => $hardBusinessRules,
+                    'process_decisions' => $processDecisions,
                 ]);
 
             if (! $response->successful()) {

@@ -216,6 +216,8 @@ class CampaignPlanSlotsRequest(BaseModel):
     understanding: str = ""
     product_focus: str = ""
     llm_model: str | None = None
+    hard_business_rules: str = ""
+    process_decisions: str = ""
 
 
 class CampaignPlanSlotsResponse(BaseModel):

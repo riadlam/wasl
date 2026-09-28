@@ -307,6 +307,11 @@ function SlotRow({ slot, canManage, busy, onRetry, onAccept, onCancelSlot, onReg
                                 <p className="text-[12px] font-semibold text-ink">
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink/40">Planned idea · </span>
                                     {slot.title}
+                                    {slot.content_pillar && (
+                                        <span className="ml-2 rounded bg-ink/5 px-1.5 py-0.5 text-[10px] font-medium text-ink/50">
+                                            {slot.content_pillar}
+                                        </span>
+                                    )}
                                 </p>
                             ) : (
                                 <>
@@ -328,6 +333,11 @@ function SlotRow({ slot, canManage, busy, onRetry, onAccept, onCancelSlot, onReg
                                 <p className="mt-1 text-[12px] font-semibold text-ink">
                                     <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-ink/40">Idea · </span>
                                     {slot.title}
+                                    {slot.content_pillar && (
+                                        <span className="ml-2 rounded bg-ink/5 px-1.5 py-0.5 text-[10px] font-medium text-ink/50">
+                                            {slot.content_pillar}
+                                        </span>
+                                    )}
                                 </p>
                             ) : null}
                             {slot.caption ? (

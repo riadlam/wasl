@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Listbox, ListboxButton, ListboxOption, ListboxOptions } from '@headlessui/react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Check, ChevronDown, FileText, LoaderCircle, Maximize2, Mic, MicOff, Paperclip, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, FileText, LoaderCircle, Maximize2, Mic, MicOff, Paperclip, Plus, SendHorizonal, Trash2, X, MessageSquare, CircleCheck, Ban } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { api } from '../api';
@@ -24,6 +24,7 @@ export default function AgentsView() {
     const reduceMotion = useReducedMotion();
     const canManage = can('agents.manage');
     const canView = can('agents.view') || canManage;
+    const [section, setSection] = useState('chats'); // chats | should | must_not
     const [messages, setMessages] = useState([]);
     const [pendingAction, setPendingAction] = useState(null);
     const [sending, setSending] = useState(false);
@@ -589,7 +590,7 @@ export default function AgentsView() {
     const chatList = Array.isArray(chatsQuery.data?.chats) ? chatsQuery.data.chats : [];
 
     return (
-        <div className="relative flex h-full min-h-0 overflow-hidden bg-white">
+        <div className="relative flex h-full min-h-0 overflow-hidden bg-cream">
             {showInterview && (
                 <div className="pointer-events-none absolute inset-y-0 right-3 z-20 flex items-center sm:right-5">
                     <div className="pointer-events-auto">
@@ -604,90 +605,196 @@ export default function AgentsView() {
                 </div>
             )}
 
-            <AgentChatSidebar
-                canManage={canManage}
-                canView={canView}
-                chatBusy={chatBusy}
-                chatList={chatList}
-                chatsLoading={chatsQuery.isLoading}
-                activeChatId={activeChatId}
-                drafting={drafting}
-                reduceMotion={reduceMotion}
-                onNewDraft={startNewDraft}
-                onSelectChat={selectChat}
-                onDeleteChat={deleteChat}
-            />
-
-            <div className={`mx-auto flex h-full min-h-0 w-full ${CHAT_MAX} flex-col`}>
-                <ChatHeader
-                    agentName={agentName}
-                    aiOn={aiOn}
-                    loading={loading}
-                    walletBalance={walletBalance}
-                    walletCurrency={walletCurrency}
-                    imageModel={imageModel}
-                    imageModels={imageModelsQuery.data?.models || []}
-                    llmModel={llmModel}
-                    llmModels={llmModelsQuery.data?.models || []}
-                    canManage={canManage}
-                    savingImageModel={savingImageModel}
-                    savingLlmModel={savingLlmModel}
-                    onImageModelChange={saveImageModel}
-                    onLlmModelChange={saveLlmModel}
-                />
-
-                <div ref={scrollRef} className="agent-chat-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-                    {loading ? (
-                        <ChatSkeleton />
-                    ) : (
-                        <div className="space-y-5 pb-2">
-                            {messages.map((msg, index) => {
-                                const prev = messages[index - 1];
-                                const showAvatar = msg.role === 'agent' && prev?.role !== 'agent';
-                                return (
-                                    <ChatBubble
-                                        key={msg.id}
-                                        message={msg}
-                                        index={index}
-                                        reduceMotion={reduceMotion}
-                                        userLetter={userLetter}
-                                        showAvatar={showAvatar}
-                                        canManage={canManage}
-                                        onUseAsset={useGeneratedAsset}
-                                        onRegenerateAsset={() => sendText(regeneratePrompt(agent?.language))}
-                                    />
-                                );
-                            })}
-                            {sending && (
-                                <AgentRow showAvatar>
-                                    <TypingDots />
-                                </AgentRow>
-                            )}
-                            {pendingAction && canManage && (
-                                <PendingCard
-                                    action={pendingAction}
-                                    busy={confirming}
-                                    onConfirm={confirmPending}
-                                    onCancel={cancelPending}
-                                    onPendingUpdated={setPendingAction}
-                                    onError={setError}
-                                />
-                            )}
-                            <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
-                        </div>
-                    )}
+            <aside className="hidden h-full w-[220px] shrink-0 flex-col border-e border-line bg-white/80 lg:flex">
+                <div className="flex h-11 items-center px-3">
+                    <span className="text-[14px] font-semibold text-ink">AI Agents</span>
                 </div>
 
-                <Composer
-                    canManage={canManage}
-                    uploading={uploading}
-                    sending={sending}
-                    pendingAssets={pendingAssets}
-                    onRemovePending={removePendingAsset}
-                    onUpload={uploadFiles}
-                    onSend={sendText}
-                    language={agent?.language}
-                />
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Assistant</p>
+                <div className="px-2">
+                    <button
+                        type="button"
+                        onClick={() => setSection('chats')}
+                        className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] ${
+                            section === 'chats' ? 'bg-selected font-semibold text-ink' : 'text-muted hover:bg-bubble'
+                        }`}
+                    >
+                        <MessageSquare size={15} strokeWidth={1.75} className="shrink-0" />
+                        Chats
+                    </button>
+                </div>
+
+                <p className="mt-4 px-3 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Instructions</p>
+                <div className="flex flex-col gap-0.5 px-2">
+                    <button
+                        type="button"
+                        onClick={() => setSection('should')}
+                        className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] ${
+                            section === 'should' ? 'bg-selected font-semibold text-ink' : 'text-muted hover:bg-bubble'
+                        }`}
+                    >
+                        <CircleCheck size={15} strokeWidth={1.75} className="shrink-0 text-emerald-600" />
+                        Should do
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSection('must_not')}
+                        className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-start text-[13px] ${
+                            section === 'must_not' ? 'bg-selected font-semibold text-ink' : 'text-muted hover:bg-bubble'
+                        }`}
+                    >
+                        <Ban size={15} strokeWidth={1.75} className="shrink-0 text-rose-600" />
+                        Must not
+                    </button>
+                </div>
+
+                {section === 'chats' && (
+                    <>
+                        <div className="mt-4 flex items-center justify-between gap-2 px-3 pb-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Recent</p>
+                            {canManage && (
+                                <button
+                                    type="button"
+                                    disabled={chatBusy}
+                                    onClick={startNewDraft}
+                                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition disabled:opacity-50 ${
+                                        drafting
+                                            ? 'border-ink/25 bg-white text-ink'
+                                            : 'border-line/80 bg-white text-ink hover:border-ink/20'
+                                    }`}
+                                    title="New chat"
+                                    aria-label="New chat"
+                                    aria-pressed={drafting}
+                                >
+                                    <Plus size={14} strokeWidth={2.25} />
+                                </button>
+                            )}
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+                            <AgentChatList
+                                canManage={canManage}
+                                chatBusy={chatBusy}
+                                chatList={chatList}
+                                chatsLoading={chatsQuery.isLoading}
+                                activeChatId={activeChatId}
+                                drafting={drafting}
+                                reduceMotion={reduceMotion}
+                                onSelectChat={selectChat}
+                                onDeleteChat={deleteChat}
+                            />
+                        </div>
+                    </>
+                )}
+            </aside>
+
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <div className="flex gap-1 border-b border-line bg-white px-3 py-2 lg:hidden">
+                    <button
+                        type="button"
+                        onClick={() => setSection('chats')}
+                        className={`h-8 flex-1 rounded-lg text-[12px] font-semibold ${
+                            section === 'chats' ? 'bg-selected text-ink' : 'text-muted'
+                        }`}
+                    >
+                        Chats
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSection('should')}
+                        className={`h-8 flex-1 rounded-lg text-[12px] font-semibold ${
+                            section === 'should' ? 'bg-selected text-ink' : 'text-muted'
+                        }`}
+                    >
+                        Should
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSection('must_not')}
+                        className={`h-8 flex-1 rounded-lg text-[12px] font-semibold ${
+                            section === 'must_not' ? 'bg-selected text-ink' : 'text-muted'
+                        }`}
+                    >
+                        Must not
+                    </button>
+                </div>
+
+                {section === 'should' || section === 'must_not' ? (
+                    <BehaviorRulesPanel polarity={section} />
+                ) : (
+                    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+                        <div className={`mx-auto flex h-full min-h-0 w-full ${CHAT_MAX} flex-col`}>
+                            <ChatHeader
+                                agentName={agentName}
+                                aiOn={aiOn}
+                                loading={loading}
+                                walletBalance={walletBalance}
+                                walletCurrency={walletCurrency}
+                                imageModel={imageModel}
+                                imageModels={imageModelsQuery.data?.models || []}
+                                llmModel={llmModel}
+                                llmModels={llmModelsQuery.data?.models || []}
+                                canManage={canManage}
+                                savingImageModel={savingImageModel}
+                                savingLlmModel={savingLlmModel}
+                                onImageModelChange={saveImageModel}
+                                onLlmModelChange={saveLlmModel}
+                            />
+
+                            <div ref={scrollRef} className="agent-chat-scroll min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+                                {loading ? (
+                                    <ChatSkeleton />
+                                ) : (
+                                    <div className="space-y-5 pb-2">
+                                        {messages.map((msg, index) => {
+                                            const prev = messages[index - 1];
+                                            const showAvatar = msg.role === 'agent' && prev?.role !== 'agent';
+                                            return (
+                                                <ChatBubble
+                                                    key={msg.id}
+                                                    message={msg}
+                                                    index={index}
+                                                    reduceMotion={reduceMotion}
+                                                    userLetter={userLetter}
+                                                    showAvatar={showAvatar}
+                                                    canManage={canManage}
+                                                    onUseAsset={useGeneratedAsset}
+                                                    onRegenerateAsset={() => sendText(regeneratePrompt(agent?.language))}
+                                                />
+                                            );
+                                        })}
+                                        {sending && (
+                                            <AgentRow showAvatar>
+                                                <TypingDots />
+                                            </AgentRow>
+                                        )}
+                                        {pendingAction && canManage && (
+                                            <PendingCard
+                                                action={pendingAction}
+                                                busy={confirming}
+                                                onConfirm={confirmPending}
+                                                onCancel={cancelPending}
+                                                onPendingUpdated={setPendingAction}
+                                                onError={setError}
+                                            />
+                                        )}
+                                        <div ref={bottomRef} className="h-px w-full shrink-0" aria-hidden />
+                                    </div>
+                                )}
+                            </div>
+
+                            <Composer
+                                canManage={canManage}
+                                uploading={uploading}
+                                sending={sending}
+                                pendingAssets={pendingAssets}
+                                onRemovePending={removePendingAsset}
+                                onUpload={uploadFiles}
+                                onSend={sendText}
+                                language={agent?.language}
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -699,102 +806,78 @@ const sidebarListMotion = {
     exit: { opacity: 0, x: -8, height: 0, marginBottom: 0 },
 };
 
-function AgentChatSidebar({
+function AgentChatList({
     canManage,
-    canView,
     chatBusy,
     chatList,
     chatsLoading,
     activeChatId,
     drafting,
     reduceMotion,
-    onNewDraft,
     onSelectChat,
     onDeleteChat,
 }) {
-    // ChatGPT-style: draft is local only — nothing appears in the list until first message is sent.
     const showEmpty = !chatsLoading && chatList.length === 0;
     const listTransition = reduceMotion ? { duration: 0 } : { duration: 0.18, ease: 'easeOut' };
 
+    if (chatsLoading) {
+        return <p className="px-2 py-4 text-center text-[12px] text-muted">Loading…</p>;
+    }
+
+    if (showEmpty) {
+        return (
+            <p className="px-2 py-6 text-center text-[12px] leading-5 text-muted">
+                Send a message to start a chat.
+            </p>
+        );
+    }
+
     return (
-        <aside className="flex w-[15rem] shrink-0 flex-col border-r border-line/80 bg-bubble/35 sm:w-[16.5rem]">
-            <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">Chats</p>
-                {canManage && (
-                    <button
-                        type="button"
-                        disabled={chatBusy}
-                        onClick={onNewDraft}
-                        className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:opacity-50 ${
-                            drafting
-                                ? 'border-ink/25 bg-white text-ink'
-                                : 'border-line/80 bg-white text-ink hover:border-ink/20'
-                        }`}
-                        title="New chat"
-                        aria-label="New chat"
-                        aria-pressed={drafting}
-                    >
-                        <Plus size={16} strokeWidth={2.25} />
-                    </button>
-                )}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1">
-                {chatsLoading ? (
-                    <p className="px-2 py-4 text-center text-[12px] text-muted">Loading…</p>
-                ) : showEmpty ? (
-                    <p className="px-2 py-6 text-center text-[12px] leading-5 text-muted">
-                        Send a message to start a chat.
-                    </p>
-                ) : (
-                    <ul className="space-y-0.5">
-                        <AnimatePresence initial={false}>
-                            {chatList.map((chat) => {
-                                const active = !drafting && Number(chat.id) === Number(activeChatId);
-                                return (
-                                    <motion.li
-                                        key={chat.id}
-                                        layout={!reduceMotion}
-                                        initial={reduceMotion ? false : sidebarListMotion.initial}
-                                        animate={reduceMotion ? {} : sidebarListMotion.animate}
-                                        exit={reduceMotion ? {} : sidebarListMotion.exit}
-                                        transition={listTransition}
-                                        className="group relative"
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => onSelectChat(chat.id)}
-                                            className={`w-full rounded-lg px-2.5 py-2 pr-9 text-left text-[13px] transition-colors ${
-                                                active
-                                                    ? 'bg-white font-medium text-ink'
-                                                    : 'text-ink/75 hover:bg-white/70 hover:text-ink'
-                                            }`}
-                                        >
-                                            <span className="line-clamp-1">{chat.title || 'Chat'}</span>
-                                        </button>
-                                        {canManage && (
-                                            <button
-                                                type="button"
-                                                disabled={chatBusy}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onDeleteChat(chat.id);
-                                                }}
-                                                className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted opacity-70 transition hover:bg-bubble hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                                                title="Delete chat"
-                                                aria-label="Delete chat"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        )}
-                                    </motion.li>
-                                );
-                            })}
-                        </AnimatePresence>
-                    </ul>
-                )}
-            </div>
-            {canView && <BehaviorRulesPanel canManage={canManage} />}
-        </aside>
+        <ul className="space-y-0.5">
+            <AnimatePresence initial={false}>
+                {chatList.map((chat) => {
+                    const active = !drafting && Number(chat.id) === Number(activeChatId);
+                    return (
+                        <motion.li
+                            key={chat.id}
+                            layout={!reduceMotion}
+                            initial={reduceMotion ? false : sidebarListMotion.initial}
+                            animate={reduceMotion ? {} : sidebarListMotion.animate}
+                            exit={reduceMotion ? {} : sidebarListMotion.exit}
+                            transition={listTransition}
+                            className="group relative"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => onSelectChat(chat.id)}
+                                className={`w-full rounded-lg px-2.5 py-2 pr-9 text-left text-[13px] transition-colors ${
+                                    active
+                                        ? 'bg-selected font-medium text-ink'
+                                        : 'text-ink/75 hover:bg-bubble hover:text-ink'
+                                }`}
+                            >
+                                <span className="line-clamp-1">{chat.title || 'Chat'}</span>
+                            </button>
+                            {canManage && (
+                                <button
+                                    type="button"
+                                    disabled={chatBusy}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDeleteChat(chat.id);
+                                    }}
+                                    className="absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-muted opacity-70 transition hover:bg-white hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                                    title="Delete chat"
+                                    aria-label="Delete chat"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            )}
+                        </motion.li>
+                    );
+                })}
+            </AnimatePresence>
+        </ul>
     );
 }
 

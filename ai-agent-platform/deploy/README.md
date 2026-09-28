@@ -22,10 +22,13 @@ Run exactly one scheduler. Workers can scale horizontally.
 ```bash
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
+php artisan storage:link
 npm ci && npm run build
 php artisan config:cache && php artisan route:cache
 php artisan queue:restart
 ```
+
+`php artisan storage:link` is required so campaign / channel logos under `storage/app/public` are reachable at `/storage/...` (Telegram can still send files from disk without the link).
 
 `queue:restart` makes workers pick up new code after the current job finishes.
 

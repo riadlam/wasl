@@ -117,7 +117,7 @@ export default function TelegramAlertsCard({ setError }) {
         >
             {!data.configured && (
                 <p className="rounded-lg border border-line bg-bubble px-3 py-2 text-[12px] text-muted">
-                    Telegram bot is not configured on the server yet (TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_USERNAME).
+                    Telegram alerts are not set up yet. Contact Wasl support if you need them enabled.
                 </p>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -130,7 +130,7 @@ export default function TelegramAlertsCard({ setError }) {
                               : 'Not linked'}
                     </p>
                     <p className="text-[12px] text-muted">
-                        {data.bot_username ? `Bot ${data.bot_username}` : 'Set TELEGRAM_BOT_USERNAME in .env'}
+                        {data.bot_username ? `Bot ${data.bot_username}` : 'Bot username unavailable'}
                         {data.linked_at ? ` · since ${new Date(data.linked_at).toLocaleString()}` : ''}
                     </p>
                 </div>

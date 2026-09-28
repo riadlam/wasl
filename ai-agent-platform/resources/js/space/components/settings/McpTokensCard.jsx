@@ -45,11 +45,11 @@ export default function McpTokensCard({ setError }) {
 
     return (
         <FormCard
-            title="Wasl MCP"
-            hint="Let an outside AI client (Claude, Cursor, your own agent) read your catalog, delivery zones, orders and campaigns over MCP. Tokens are shown once."
+            title="API access"
+            hint="Issue a token so an external AI app can read your catalog, delivery zones, orders and campaigns. Tokens are shown once."
         >
             <p className="break-all rounded-lg bg-bubble px-3 py-2 font-mono text-[12px] text-ink">
-                POST {query.data?.endpoint || '/api/mcp'}
+                Endpoint: {query.data?.endpoint || '/api/mcp'}
             </p>
             {created && (
                 <div className="rounded-lg border border-teal/40 bg-teal/5 p-3">
@@ -59,7 +59,7 @@ export default function McpTokensCard({ setError }) {
             )}
             <div className="flex items-end gap-2">
                 <div className="flex-1">
-                    <TextField label="Token name" placeholder="My Claude desktop" value={name} onChange={(e) => setName(e.target.value)} />
+                    <TextField label="Token name" placeholder="Integration token" value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <button
                     type="button"

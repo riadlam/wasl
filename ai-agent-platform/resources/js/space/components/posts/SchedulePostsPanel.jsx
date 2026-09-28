@@ -38,7 +38,7 @@ export default function SchedulePostsPanel() {
             (account) => account.platform
                 && account.platform !== 'simulator'
                 && account.status !== 'disconnected'
-                && account.socialapi_account_id,
+                && (account.connected !== false),
         ),
         [socialAccounts],
     );

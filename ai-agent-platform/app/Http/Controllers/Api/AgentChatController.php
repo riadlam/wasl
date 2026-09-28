@@ -447,24 +447,34 @@ class AgentChatController extends Controller
             ->get()
             ->map(fn (AgentImageJob $job) => $job->toPublicArray())
             ->all();
-        if ($jobs !== []) {
-            $meta['image_jobs'] = $jobs;
+
+        $publicMeta = [];
+        if (isset($meta['cost_da'])) {
+            $publicMeta['cost_da'] = $meta['cost_da'];
         }
-        unset($meta['prompt']);
+        if ($jobs !== []) {
+            $publicMeta['image_jobs'] = $jobs;
+        }
+        if (isset($meta['pending_action']) && is_array($meta['pending_action'])) {
+            $publicMeta['pending_action'] = $meta['pending_action'];
+        }
+        if (isset($meta['confirm_card']) && is_array($meta['confirm_card'])) {
+            $publicMeta['confirm_card'] = $meta['confirm_card'];
+        }
         if (isset($meta['tool_calls']) && is_array($meta['tool_calls'])) {
-            $meta['tool_calls'] = array_map(function ($call) {
+            $publicMeta['tool_calls'] = array_values(array_map(function ($call) {
                 if (! is_array($call)) {
-                    return $call;
-                }
-                if (isset($call['arguments']['prompt'])) {
-                    unset($call['arguments']['prompt']);
-                }
-                if (isset($call['result']['prompt_used'])) {
-                    unset($call['result']['prompt_used']);
+                    return ['ok' => false];
                 }
 
-                return $call;
-            }, $meta['tool_calls']);
+                return [
+                    'tool' => is_string($call['tool'] ?? null) ? $call['tool'] : 'tool',
+                    'ok' => ! isset($call['error']) && (($call['result']['ok'] ?? true) !== false),
+                ];
+            }, $meta['tool_calls']));
+        }
+        if (isset($meta['error']) && is_string($meta['error'])) {
+            $publicMeta['error'] = \App\Support\MerchantSafeMessage::of($meta['error'], 'Something went wrong.');
         }
 
         return [
@@ -472,7 +482,7 @@ class AgentChatController extends Controller
             'role' => $m->role,
             'content' => $m->content,
             'created_at' => optional($m->created_at)?->toIso8601String(),
-            'meta' => $meta,
+            'meta' => $publicMeta === [] ? null : $publicMeta,
             'assets' => $assets,
             'image_jobs' => $jobs,
         ];

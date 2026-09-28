@@ -509,7 +509,7 @@ class CampaignSlotApprovalService
             ."Shop: {$shop}\n"
             .'Day '.$slot->day_index.' · '.ucfirst((string) $slot->slot_kind)."\n"
             ."Slot #{$slot->id}\n\n"
-            ."PostEnhancer is improving this caption with shop identity + campaign memories. Buttons return when ready.",
+            ."Improving this caption with your shop voice and campaign notes. Buttons return when ready.",
         );
 
         $seedCaption = trim((string) $slot->caption);

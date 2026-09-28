@@ -115,8 +115,26 @@ class AiCampaign extends Model
             'channel_ids' => $this->relationLoaded('channels')
                 ? $this->channels->pluck('social_account_id')->map(fn ($id) => (int) $id)->all()
                 : [],
-            'warnings' => is_array($this->warnings) ? $this->warnings : [],
-            'plan_meta' => is_array($this->plan_meta) ? $this->plan_meta : null,
+            'warnings' => collect(is_array($this->warnings) ? $this->warnings : [])
+                ->map(function ($w) {
+                    if (! is_array($w)) {
+                        return ['message' => \App\Support\MerchantSafeMessage::of((string) $w, 'Campaign warning.')];
+                    }
+                    $msg = $w['message'] ?? null;
+
+                    return array_filter([
+                        'code' => $w['code'] ?? null,
+                        'message' => \App\Support\MerchantSafeMessage::of(
+                            is_string($msg) ? $msg : null,
+                            'Campaign warning.',
+                        ),
+                    ], fn ($v) => $v !== null && $v !== '');
+                })
+                ->values()
+                ->all(),
+            'plan_meta' => \App\Support\MerchantSafeMessage::publicPlanMeta(
+                is_array($this->plan_meta) ? $this->plan_meta : null
+            ),
             'estimated_da' => round((float) $this->estimated_da, 2),
             'spent_da' => round((float) $this->spent_da, 2),
             'created_at' => optional($this->created_at)?->toIso8601String(),

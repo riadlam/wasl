@@ -15,28 +15,28 @@ export const CONTENT_MODES = {
         id: 'ai_recent',
         title: 'AI from your channels',
         description: 'We study recent posts on the selected pages, then draft new posts and stories in the same voice.',
-        request: 'CampaignBriefAgent gathers facts → CampaignCreativeAgent writes → CaptionApprover confirms brand fit before you see the tease.',
+        request: 'We research your pages, draft the post, then check brand fit before you see a sample.',
         exampleTitle: 'Example output',
         exampleBody: 'Carousel caption in Darija highlighting a weekend promo, plus two story frames with CTA stickers — timed to your Day 2 slots.',
-        agents: ['CampaignBriefAgent', 'CampaignCreativeAgent', 'CaptionApprover'],
+        agents: ['Brief', 'Write', 'Brand check'],
     },
     product_images: {
         id: 'product_images',
         title: 'Product images',
         description: 'Upload product photos; AI creates one post and matching stories per image across your schedule.',
-        request: 'Same agent chain on your uploads: Brief → Creative → CaptionApprover, then sized post + story variants.',
+        request: 'Same flow on your uploads: research → draft → brand check, then post + story sizes.',
         exampleTitle: 'Example output',
         exampleBody: 'Square post with price line and hashtags, plus a vertical story with swipe-up style CTA — mapped to your Day 1 morning slot.',
-        agents: ['CampaignBriefAgent', 'CampaignCreativeAgent', 'CaptionApprover'],
+        agents: ['Brief', 'Write', 'Brand check'],
     },
 };
 
 export const CAMPAIGN_TEASE_AGENTS = [
-    { id: 'CampaignBriefAgent', role: 'Brief' },
-    { id: 'BusinessIdentityAgent', role: 'Identity' },
-    { id: 'OwnerApprover', role: 'Confirm Q' },
-    { id: 'CaptionWriter', role: 'Write' },
-    { id: 'CaptionApprover', role: 'Confirm' },
+    { id: 'brief', role: 'Brief' },
+    { id: 'identity', role: 'Identity' },
+    { id: 'confirm_q', role: 'Confirm Q' },
+    { id: 'write', role: 'Write' },
+    { id: 'confirm', role: 'Brand check' },
 ];
 
 export function minImagesForPosts(totalPosts) {

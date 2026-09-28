@@ -37,7 +37,7 @@ const TIMEZONES = [
 
 const AUTO_FLAGS = [
     ['ai_auto_publish_posts', 'Publish without confirm', 'Skip the chat confirm card when publishing or scheduling posts.'],
-    ['ai_auto_reply_comments', 'Reply to comments', 'Skip confirm when the agent replies to comments via SocialAPI.'],
+    ['ai_auto_reply_comments', 'Reply to comments', 'Skip confirm when the agent replies to comments on connected channels.'],
     ['ai_auto_send_dms', 'Send DMs', 'Skip confirm when the agent sends direct messages.'],
     ['ai_auto_reply_reviews', 'Reply to reviews', 'Skip confirm when the agent replies to reviews.'],
 ];
@@ -271,7 +271,7 @@ function AgentAutoSettingsCard({ canManage, setError }) {
     return (
         <FormCard
             title="Owner assistant automation"
-            hint="Your private assistant in the Agents chat. It uses the model you pick in the Agents header. When a flag is off, that SocialAPI action needs the chat confirm card; when on, it runs without confirm. The assistant can also change these when you ask in chat."
+            hint="Your private assistant in the Agents chat. It uses the model you pick in the Agents header. When a flag is off, that channel action needs the chat confirm card; when on, it runs without confirm. The assistant can also change these when you ask in chat."
         >
             {agentQuery.isLoading ? (
                 <p className="text-[13px] text-muted">Loading…</p>

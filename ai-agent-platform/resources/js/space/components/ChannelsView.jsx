@@ -222,7 +222,7 @@ export default function ChannelsView() {
         try {
             await api.delete(`/social-accounts/${id}/logo`);
             await queryClient.invalidateQueries({ queryKey: queryKeys.socialAccounts });
-            setBanner('Custom logo removed — using SocialAPI page picture when available.');
+            setBanner('Custom logo removed — using the page’s profile picture when available.');
             setBannerKind('ok');
         } catch (err) {
             setError(apiErrorMessage(err, 'Could not clear logo.'));
@@ -239,8 +239,8 @@ export default function ChannelsView() {
             await queryClient.invalidateQueries({ queryKey: queryKeys.socialAccounts });
             setBanner(
                 data?.refreshed_from_api
-                    ? 'Page picture refreshed from SocialAPI.'
-                    : 'SocialAPI had no picture — upload a logo instead.',
+                    ? 'Page picture refreshed from the connected page.'
+                    : 'No page picture found — upload a logo instead.',
             );
             setBannerKind(data?.refreshed_from_api ? 'ok' : 'warn');
         } catch (err) {
@@ -291,7 +291,7 @@ export default function ChannelsView() {
         }
     };
 
-    const live = accounts.filter((a) => a.provider === 'socialapi' && a.status !== 'disconnected');
+    const live = accounts.filter((a) => a.status !== 'disconnected' && a.platform !== 'simulator' && (a.connected !== false));
     const simulator = accounts.find((a) => a.platform === 'simulator');
     const pages = pending?.pages || [];
     const profiles = pending?.profiles || [];
@@ -354,7 +354,7 @@ export default function ChannelsView() {
     return (
         <PageFrame
             title="Channels"
-            subtitle="Connect platforms for this shop only. Click a channel avatar to upload a page logo for AI posts (or use the picture from SocialAPI)."
+            subtitle="Connect platforms for this shop only. Click a channel avatar to upload a page logo for AI posts (or use the picture from the connected page)."
         >
             <div className="mx-auto max-w-4xl space-y-8">
                 {!configured && (
@@ -445,7 +445,7 @@ export default function ChannelsView() {
                                                             disabled={busy === `avatar-${account.id}`}
                                                             onClick={() => refreshAvatar(account.id)}
                                                             className="text-xs font-semibold text-accent hover:underline disabled:opacity-40"
-                                                            title="Re-fetch page picture from SocialAPI"
+                                                            title="Refresh page picture"
                                                         >
                                                             {busy === `avatar-${account.id}` ? '…' : 'Refresh pic'}
                                                         </button>
@@ -457,7 +457,7 @@ export default function ChannelsView() {
                                                             onClick={() => clearLogo(account.id)}
                                                             className="text-xs font-semibold text-muted hover:underline disabled:opacity-40"
                                                         >
-                                                            Use API pic
+                                                            Use page picture
                                                         </button>
                                                     )}
                                                 </>
@@ -482,7 +482,7 @@ export default function ChannelsView() {
                         </div>
                     )}
                     {simulator && (
-                        <p className="text-xs text-muted">Simulator stays available for local tests without a live page.</p>
+                        <p className="text-xs text-muted">Test inbox is available without a live page.</p>
                     )}
                 </motion.section>
 

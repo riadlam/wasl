@@ -322,8 +322,14 @@ class SocialAccountBrandIsolationTest extends TestCase
             ->assertOk()
             ->json('accounts');
 
-        $ids = collect($payload)->pluck('socialapi_account_id')->filter()->values()->all();
-        $this->assertContains('acc_a', $ids);
-        $this->assertNotContains('acc_b', $ids);
+        $names = collect($payload)->pluck('name')->filter()->values()->all();
+        $this->assertContains('Shop A', $names);
+        $this->assertNotContains('Shop B', $names);
+
+        $shopA = collect($payload)->firstWhere('name', 'Shop A');
+        $this->assertNotNull($shopA);
+        $this->assertArrayNotHasKey('socialapi_account_id', $shopA);
+        $this->assertArrayNotHasKey('provider', $shopA);
+        $this->assertTrue(($shopA['connected'] ?? false) === true);
     }
 }

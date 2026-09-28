@@ -88,7 +88,6 @@ class AgentAsset extends Model
             'original_name' => $this->original_name,
             'mime' => $this->mime,
             'size' => $this->size,
-            'path' => $this->path,
             'url' => $this->absoluteUrl(),
             'created_at' => optional($this->created_at)?->toIso8601String(),
         ];

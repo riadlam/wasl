@@ -50,5 +50,35 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->shouldRenderJsonWhen(function ($request, \Throwable $e) {
+            return $request->is('api/*') || $request->expectsJson();
+        });
+
+        $exceptions->respond(function (\Symfony\Component\HttpFoundation\Response $response, \Throwable $e, $request) {
+            if (! $request->is('api/*') && ! $request->expectsJson()) {
+                return $response;
+            }
+
+            // Never leak exception class / file / line / trace to the browser.
+            if ($response->getStatusCode() >= 500) {
+                return response()->json([
+                    'message' => 'Something went wrong. Please try again.',
+                ], $response->getStatusCode());
+            }
+
+            $payload = json_decode($response->getContent() ?: '', true);
+            if (! is_array($payload)) {
+                return $response;
+            }
+
+            unset($payload['exception'], $payload['file'], $payload['line'], $payload['trace']);
+            if (isset($payload['message']) && is_string($payload['message'])) {
+                $payload['message'] = \App\Support\MerchantSafeMessage::of(
+                    $payload['message'],
+                    $payload['message'],
+                );
+            }
+
+            return response()->json($payload, $response->getStatusCode());
+        });
     })->create();

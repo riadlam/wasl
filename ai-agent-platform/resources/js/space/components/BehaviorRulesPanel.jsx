@@ -184,7 +184,7 @@ export default function BehaviorRulesPanel({ polarity = 'should' }) {
                             <Icon size={22} className={accent.empty} />
                         </div>
                         <p className="mt-4 text-sm font-semibold text-ink">No {title.toLowerCase()} rules yet</p>
-                        <p className="mt-1 text-[13px] text-muted">These instructions always load into the owner and customer AI agents.</p>
+                        <p className="mt-1 text-[13px] text-muted">These rules apply to every AI reply for your shop.</p>
                         {canManage && (
                             <button
                                 type="button"

@@ -70,7 +70,7 @@ export default function ProductEditor({ product, zones, onClose, onSaved, onDele
     const [removedImageIds, setRemovedImageIds] = useState([]);
     const galleryState = useRef(gallery);
     galleryState.current = gallery;
-    const linked = (socialAccounts || []).filter((a) => a.provider === 'socialapi' && a.status !== 'disconnected');
+    const linked = (socialAccounts || []).filter((a) => a.status !== 'disconnected' && a.platform !== 'simulator' && (a.connected !== false));
     const canManage = can('products.manage');
 
     const { register, control, watch, setValue, getValues, reset, trigger, formState: { errors } } = useForm({

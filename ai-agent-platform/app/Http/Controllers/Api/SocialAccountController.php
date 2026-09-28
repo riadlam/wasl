@@ -8,6 +8,7 @@ use App\Models\SocialAccount;
 use App\Services\OnboardingService;
 use App\Services\SocialApi\SocialApiAccountService;
 use App\Support\CurrentBusiness;
+use App\Support\MerchantSafeMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -41,7 +42,6 @@ class SocialAccountController extends Controller
 
                 return $account->toChannelApiArray();
             })->values(),
-            'redirect_uri' => config('services.socialapi.redirect_uri'),
             'configured' => (string) config('services.socialapi.key') !== '',
         ]);
     }
@@ -67,16 +67,16 @@ class SocialAccountController extends Controller
         try {
             $result = $this->accounts->connectUrl($business, $data['platform'], $request->user()->id);
         } catch (Throwable $e) {
+            report($e);
+
             return response()->json([
-                'message' => $this->friendlyError($e, 'Could not start channel connect. Check that channel connect is configured and APP_URL uses HTTPS.'),
+                'message' => 'Could not start channel connect. Try again or contact Wasl support.',
             ], 422);
         }
 
         return response()->json([
-            'auth_url' => $result['auth_url'] ?? null,
-            'state' => $result['state'] ?? null,
-            'metadata' => $result['metadata'] ?? null,
-            'message' => $result['message'] ?? null,
+            'auth_url' => is_string($result['auth_url'] ?? null) ? $result['auth_url'] : null,
+            'state' => is_string($result['state'] ?? null) ? $result['state'] : null,
             'platform' => $data['platform'],
         ]);
     }
@@ -86,20 +86,27 @@ class SocialAccountController extends Controller
         try {
             $pending = $this->accounts->fetchPending($connectionId);
         } catch (Throwable $e) {
+            report($e);
+
             return response()->json([
-                'message' => $this->friendlyError($e, 'Pending connection expired or was not found. Start connect again.'),
+                'message' => 'Pending connection expired or was not found. Start connect again.',
             ], 422);
         }
 
-        // SocialAPI sometimes nests the payload under data.
+        // Provider sometimes nests the payload under data.
         if (isset($pending['data']) && is_array($pending['data']) && ! isset($pending['pages']) && ! isset($pending['profiles'])) {
             $pending = array_merge($pending, $pending['data']);
         }
 
         return response()->json([
-            'pending' => $pending,
-            'pages' => $pending['pages'] ?? [],
-            'profiles' => $pending['profiles'] ?? [],
+            'pages' => $this->publicPages($pending['pages'] ?? []),
+            'profiles' => $this->publicProfiles($pending['profiles'] ?? []),
+            'login_id' => isset($pending['login_id']) && is_string($pending['login_id'])
+                ? $pending['login_id']
+                : null,
+            'platform' => isset($pending['platform']) && is_string($pending['platform'])
+                ? $pending['platform']
+                : null,
         ]);
     }
 
@@ -140,8 +147,10 @@ class SocialAccountController extends Controller
         try {
             $result = $this->accounts->selectPending($data['connection_id'], $payload);
         } catch (Throwable $e) {
+            report($e);
+
             return response()->json([
-                'message' => $this->friendlyError($e, 'Could not finish the Page / profile selection.'),
+                'message' => 'Could not finish the Page / profile selection.',
             ], 422);
         }
 
@@ -158,15 +167,11 @@ class SocialAccountController extends Controller
         }
 
         return response()->json([
-            'account' => $result,
-            'accounts' => collect($saved)->map(fn (SocialAccount $account) => [
-                'id' => $account->id,
-                'platform' => $account->platform,
-                'name' => $account->name,
-                'username' => $account->username,
-                'socialapi_account_id' => $account->socialapi_account_id,
-                'status' => $account->status,
-            ])->values(),
+            'accounts' => collect($saved)->map(function (SocialAccount $account) {
+                $account->loadMissing('logoAsset');
+
+                return $account->toChannelApiArray();
+            })->values(),
             'count' => count($saved),
         ]);
     }
@@ -273,13 +278,8 @@ class SocialAccountController extends Controller
             );
         } catch (Throwable $e) {
             report($e);
-            try {
-                $msg = $this->friendlyError($e, 'Could not refresh the page picture from SocialAPI.');
-            } catch (Throwable) {
-                $msg = 'Could not refresh the page picture from SocialAPI.';
-            }
 
-            return response()->json(['message' => $msg], 422);
+            return response()->json(['message' => 'Could not refresh the page picture.'], 422);
         }
 
         if (isset($remote['data']) && is_array($remote['data'])) {
@@ -288,7 +288,7 @@ class SocialAccountController extends Controller
 
         if ($remote === []) {
             return response()->json([
-                'message' => 'SocialAPI has no picture for this page yet. Click the avatar to upload a logo instead.',
+                'message' => 'No page picture found yet. Click the avatar to upload a logo instead.',
             ], 422);
         }
 
@@ -342,48 +342,60 @@ class SocialAccountController extends Controller
         return null;
     }
 
-    private function friendlyError(Throwable $e, string $fallback): string
+    /**
+     * @param  list<mixed>  $pages
+     * @return list<array{platform_page_id: string, name: ?string, assignable: bool}>
+     */
+    private function publicPages(array $pages): array
     {
-        $message = $e->getMessage();
-        if (str_contains($message, 'SocialAPI request failed:')) {
-            $body = trim(str_replace('SocialAPI request failed:', '', $message));
-            $json = json_decode($body, true);
-            if (is_array($json)) {
-                $detail = $json['message'] ?? $json['error'] ?? $json['errors'] ?? null;
-
-                return $this->stringifyApiDetail($detail, $fallback);
+        $out = [];
+        foreach ($pages as $page) {
+            if (! is_array($page)) {
+                continue;
             }
-            if ($body !== '') {
-                return $body;
+            $id = (string) ($page['platform_page_id'] ?? $page['id'] ?? $page['page_id'] ?? '');
+            if ($id === '') {
+                continue;
             }
+            $out[] = [
+                'platform_page_id' => $id,
+                'name' => isset($page['name']) && is_string($page['name']) ? $page['name'] : null,
+                'assignable' => array_key_exists('assignable', $page) ? (bool) $page['assignable'] : true,
+            ];
         }
 
-        return $fallback;
+        return $out;
     }
 
-    private function stringifyApiDetail(mixed $detail, string $fallback): string
+    /**
+     * @param  list<mixed>  $profiles
+     * @return list<array{platform_account_id: string, display_name: ?string}>
+     */
+    private function publicProfiles(array $profiles): array
     {
-        if (is_string($detail) && trim($detail) !== '') {
-            return trim($detail);
-        }
-        if (is_numeric($detail)) {
-            return (string) $detail;
-        }
-        if (is_array($detail)) {
-            $flat = [];
-            array_walk_recursive($detail, function ($v) use (&$flat) {
-                if (is_string($v) && trim($v) !== '') {
-                    $flat[] = trim($v);
-                } elseif (is_numeric($v)) {
-                    $flat[] = (string) $v;
-                }
-            });
-            if ($flat !== []) {
-                return implode(' ', array_unique($flat));
+        $out = [];
+        foreach ($profiles as $profile) {
+            if (! is_array($profile)) {
+                continue;
             }
+            $id = (string) ($profile['platform_account_id'] ?? $profile['id'] ?? $profile['profile_id'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $out[] = [
+                'platform_account_id' => $id,
+                'display_name' => isset($profile['display_name']) && is_string($profile['display_name'])
+                    ? $profile['display_name']
+                    : (isset($profile['name']) && is_string($profile['name']) ? $profile['name'] : null),
+            ];
         }
 
-        return $fallback;
+        return $out;
+    }
+
+    private function friendlyError(Throwable $e, string $fallback): string
+    {
+        return MerchantSafeMessage::of($e->getMessage(), $fallback);
     }
 
     private function hasConnectedFacebook(int $businessId): bool

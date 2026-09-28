@@ -72,11 +72,13 @@ class SocialAccount extends Model
      */
     public function toChannelApiArray(): array
     {
+        $connected = $this->status !== 'disconnected'
+            && filled($this->socialapi_account_id);
+
         return [
             'id' => $this->id,
             'platform' => $this->platform,
-            'provider' => $this->provider,
-            'socialapi_account_id' => $this->socialapi_account_id,
+            'connected' => $connected,
             'name' => $this->name,
             'username' => $this->username,
             'avatar_url' => $this->avatar_url,

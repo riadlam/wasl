@@ -729,7 +729,6 @@ class ConversationService
 
         return [
             'id' => $conversation->id,
-            'socialapi_conversation_id' => $conversation->socialapi_conversation_id,
             'name' => $customer?->name ?: ($profile?->username ?: 'Customer'),
             'city' => $customer?->wilaya ?: '',
             'wilaya' => $customer?->wilaya,

@@ -136,7 +136,7 @@ export default function CampaignWizard({ onBack, onLaunched }) {
             const { data } = await api.post('/agent/campaigns', campaignPayload({ ...state, images }, assetIds));
             const label = data?.campaign?.name || 'Campaign';
             setLaunchNote(
-                `${label} is live. Knowledge is in memory — posts draft one-by-one right away; schedule times only control SocialAPI publish. Each draft waits for Telegram Accept / Cancel / Regen before the next.`,
+                `${label} is live. Drafts start now; scheduled times control when posts go live on your channels. Approve each draft in Telegram (Accept / Cancel / Regen) before the next.`,
             );
             queryClient.invalidateQueries({ queryKey: queryKeys.campaigns });
             if (data?.campaign?.id) onLaunched?.(data.campaign);

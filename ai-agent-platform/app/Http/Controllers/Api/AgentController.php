@@ -45,12 +45,6 @@ class AgentController extends Controller
             'settings' => $settings,
             'rules' => $business->agentRules()->orderBy('priority')->get(),
             'assets' => $assets,
-            'runs' => AgentRun::query()
-                ->forBusiness($business->id)
-                ->with('toolCalls')
-                ->latest()
-                ->limit(20)
-                ->get(),
         ]);
     }
 
@@ -199,9 +193,15 @@ class AgentController extends Controller
     {
         $run = AgentRun::query()
             ->forBusiness(CurrentBusiness::require()->id)
-            ->with('toolCalls')
             ->findOrFail($id);
 
-        return response()->json(['run' => $run]);
+        return response()->json([
+            'run' => [
+                'id' => $run->id,
+                'status' => $run->status,
+                'created_at' => optional($run->created_at)?->toIso8601String(),
+                'updated_at' => optional($run->updated_at)?->toIso8601String(),
+            ],
+        ]);
     }
 }

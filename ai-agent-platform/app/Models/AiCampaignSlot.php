@@ -91,8 +91,9 @@ class AiCampaignSlot extends Model
             'status' => $this->status,
             'title' => $this->title,
             'caption' => $this->caption,
-            'socialapi_post_id' => $this->socialapi_post_id,
-            'error' => $this->error,
+            'error' => $this->error !== null && $this->error !== ''
+                ? \App\Support\MerchantSafeMessage::of((string) $this->error, 'This slot failed. Try again or regenerate.')
+                : null,
             'agent_asset_id' => $this->agent_asset_id,
             'image_url' => $this->relationLoaded('asset') ? $this->asset?->absoluteUrl() : null,
             'cost_da' => round((float) $this->cost_da, 2),

@@ -313,12 +313,18 @@ class SocialApiWebhookTest extends TestCase
         $this->assertCount(2, $customer->metadata['meta_ads'] ?? []);
 
         $inbox = $this->asShopUser($owner, $business)->getJson('/api/conversations')->assertOk()->json('conversations');
-        $byThread = collect($inbox)->keyBy('socialapi_conversation_id');
+        $byId = collect($inbox)->keyBy('id');
 
-        $this->assertSame('111111111111', $byThread['conv_ad_a']['meta_ad_id'] ?? null);
-        $this->assertSame('Ad Alpha', $byThread['conv_ad_a']['meta_ad_title'] ?? null);
-        $this->assertSame('222222222222', $byThread['conv_ad_b']['meta_ad_id'] ?? null);
-        $this->assertSame('Ad Beta', $byThread['conv_ad_b']['meta_ad_title'] ?? null);
+        $convA = \App\Models\Conversation::query()->where('socialapi_conversation_id', 'conv_ad_a')->first();
+        $convB = \App\Models\Conversation::query()->where('socialapi_conversation_id', 'conv_ad_b')->first();
+        $this->assertNotNull($convA);
+        $this->assertNotNull($convB);
+
+        $this->assertSame('111111111111', $byId[$convA->id]['meta_ad_id'] ?? null);
+        $this->assertSame('Ad Alpha', $byId[$convA->id]['meta_ad_title'] ?? null);
+        $this->assertSame('222222222222', $byId[$convB->id]['meta_ad_id'] ?? null);
+        $this->assertSame('Ad Beta', $byId[$convB->id]['meta_ad_title'] ?? null);
+        $this->assertArrayNotHasKey('socialapi_conversation_id', $byId[$convA->id] ?? []);
     }
 
     private function connectSocialAccount($business): SocialAccount

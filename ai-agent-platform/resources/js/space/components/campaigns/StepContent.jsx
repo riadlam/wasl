@@ -621,7 +621,7 @@ export default forwardRef(function StepContent({ state, onChange, errors, onBrie
                 <p className="mt-2 text-[11px] font-medium text-coral" role="alert">{errors.brief}</p>
             ) : null}
             <p className="mt-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-ink/35">
-                {agentStrip.map((a) => a.id).join(' · ')}
+                {agentStrip.map((a) => a.role).join(' · ')}
             </p>
             {genError && !modalOpen && (
                 <p className="mt-2 text-[11px] font-medium text-coral" role="alert">{genError}</p>
@@ -648,14 +648,14 @@ export default forwardRef(function StepContent({ state, onChange, errors, onBrie
                                 </h3>
                                 <p className="mt-0.5 text-[11px] text-ink/40">
                                     {modalPhase === 'brief'
-                                        ? 'Answer post decisions if needed — then Creative + CaptionApprover run.'
+                                        ? 'Answer post decisions if needed — then we draft the caption and check brand fit.'
                                         : (preview?.platform || '')}
                                 </p>
                                 <p className="mt-1 text-[10px] font-medium text-ink/30">
                                     {agentStrip.map((a, idx) => (
                                         <span key={a.id}>
                                             {idx > 0 ? ' → ' : ''}
-                                            {a.role}: {a.id}
+                                            {a.role}
                                         </span>
                                     ))}
                                 </p>
@@ -988,13 +988,9 @@ export default forwardRef(function StepContent({ state, onChange, errors, onBrie
                                     </p>
                                     {previewAgents && (
                                         <p className="mt-2 text-[10px] font-medium text-ink/30">
-                                            {[
-                                                previewAgents.brief || 'CampaignBriefAgent',
-                                                previewAgents.writer || 'CampaignCreativeAgent',
-                                                previewAgents.approver || 'CaptionApprover',
-                                            ].filter(Boolean).join(' → ')}
-                                            {preview?.approver?.approved === true ? ' · approved' : ''}
-                                            {preview?.approver?.needs_owner_edit === true ? ' · needs your edit' : ''}
+                                            Research → Draft → Brand check
+                                            {preview?.brand_check?.approved === true || preview?.approver?.approved === true ? ' · approved' : ''}
+                                            {preview?.brand_check?.needs_edit === true || preview?.approver?.needs_owner_edit === true ? ' · needs your edit' : ''}
                                         </p>
                                     )}
                                 </div>

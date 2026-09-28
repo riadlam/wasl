@@ -242,7 +242,7 @@ function TrainingPanel({ training, onOpenChannels }) {
                     Training your AI on your page…
                 </h1>
                 <p className="mt-2 text-center text-xs leading-relaxed text-muted">
-                    Reading posts, comments, and chats (with photos). Safe to refresh — this runs on the server.
+                    Reading posts, comments, and chats (with photos). Safe to refresh — training continues in the background.
                 </p>
 
                 <div className="mt-4 space-y-2">

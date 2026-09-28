@@ -23,7 +23,6 @@ class ConversationController extends Controller
 
         return response()->json([
             'conversation' => $this->conversations->toInboxArray($conversation),
-            'runs' => $conversation->agentRuns()->with('toolCalls')->latest()->limit(5)->get(),
         ]);
     }
 
@@ -40,7 +39,6 @@ class ConversationController extends Controller
 
         return response()->json([
             'conversation' => $this->conversations->toInboxArray($conversation),
-            'runs' => $conversation->agentRuns()->with('toolCalls')->latest()->limit(5)->get(),
         ]);
     }
 

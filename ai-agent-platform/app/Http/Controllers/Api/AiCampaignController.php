@@ -8,6 +8,7 @@ use App\Models\AiCampaignSlot;
 use App\Services\Campaigns\AiCampaignService;
 use App\Services\Campaigns\CampaignPayloadValidator;
 use App\Support\CurrentBusiness;
+use App\Support\MerchantSafeMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -85,10 +86,14 @@ class AiCampaignController extends Controller
                 'message' => $e->getMessage(),
             ], $e);
 
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json([
+                'message' => MerchantSafeMessage::of($e->getMessage(), 'Could not generate preview.'),
+            ], 422);
         }
 
-        return response()->json($preview);
+        return response()->json(MerchantSafeMessage::publicCampaignPreview(
+            is_array($preview) ? $preview : []
+        ));
     }
 
     public function exampleBrief(Request $request): JsonResponse
@@ -108,10 +113,14 @@ class AiCampaignController extends Controller
                 'message' => $e->getMessage(),
             ], $e);
 
-            return response()->json(['message' => $e->getMessage()], 422);
+            return response()->json([
+                'message' => MerchantSafeMessage::of($e->getMessage(), 'Could not generate preview.'),
+            ], 422);
         }
 
-        return response()->json($turn);
+        return response()->json(MerchantSafeMessage::publicCampaignPreview(
+            is_array($turn) ? $turn : []
+        ));
     }
 
     public function cancel(int $id): JsonResponse

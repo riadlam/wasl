@@ -60,10 +60,11 @@ class AiCampaignSlotTarget extends Model
                 : null,
             'platform' => $this->platform,
             'status' => $this->status,
-            'socialapi_post_id' => $this->socialapi_post_id,
             'caption' => $this->caption,
             'image_url' => $this->relationLoaded('asset') ? $this->asset?->absoluteUrl() : null,
-            'error' => $this->error,
+            'error' => $this->error !== null && $this->error !== ''
+                ? \App\Support\MerchantSafeMessage::of((string) $this->error, 'Publishing failed for this channel.')
+                : null,
         ];
     }
 }

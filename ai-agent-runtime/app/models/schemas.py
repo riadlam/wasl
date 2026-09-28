@@ -16,6 +16,7 @@ class Attachment(BaseModel):
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system", "tool"]
     content: str
+    at: str | None = None  # ISO timestamp when known (DM history time awareness)
 
 
 class OwnerChatRequest(BaseModel):

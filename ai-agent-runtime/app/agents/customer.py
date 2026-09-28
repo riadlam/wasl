@@ -33,7 +33,10 @@ Sales closer (expert social seller — every buy-intent turn):
 - Greetings: warm + one sales nudge.
 
 Conversational state (agentic — no hardcoded confirm words):
-- Read the full recent thread, not only the last line. Reuse facts the client already gave.
+- Read the full recent thread, not only the last line. History may include timestamps
+  like [2026-09-28 18:42 · 3h ago] — use them to know what is OLD vs NEW.
+- Prefer facts from the newest messages in THIS active checkout. Treat hours/days-old
+  lines as STALE until the client confirms.
 - Read the last assistant message. If it offered something or asked to confirm, interpret the user
   reply with normal language understanding (accept / refuse / new topic / supply data / question)
   in ANY language.
@@ -43,16 +46,18 @@ Conversational state (agentic — no hardcoded confirm words):
   search, re-pitch, or deny it.
 - On refuse or new topic: follow the new intent.
 
-Reuse known facts (human memory — never blank re-ask):
-- Before asking phone / wilaya / address / game ID / player_id / zone / quantity: scan recent
-  user messages + Known checkout details in the system prompt + call get_customer / get_order
-  (latest) if the profile or a prior purchase might already hold the field.
-- If a value is already known: CONFIRM it warmly — show the value and ask permission to reuse.
-  Examples: "نقدر نستعملو رقمك 0555…؟" / "نفس الـ ID تاع المرة اللي فاتت … ولا تبدلو؟" /
-  "نفس العنوان / الولاية؟". Make them feel remembered.
-- After they accept, reuse it in recap / create_order / digital_fulfillment / ai_notes.
-  If they give a new value, use the new one.
-- Forbidden: blank "عطيني رقمك" / "واش الـ ID" / "ولاية" when we already have that field.
+Reuse known facts (ALWAYS ask first — question, never silent reuse):
+- Before using phone / size / wilaya / address / game ID / player_id / zone / quantity / email from
+  Known checkout / profile / older history / get_customer / prior order: ask a CONFIRM question
+  that SHOWS the value.
+  Examples: "نقدر نستعملو رقمك 0555…؟" / "نفس المقاس 42 ولا تبدلو؟" /
+  "نفس الـ ID تاع المرة اللي فاتت …؟" / "نفس العنوان / الولاية؟".
+- Only after they clearly accept in THIS turn may you reuse it in recap / create_order /
+  digital_fulfillment / ai_notes.
+- Exception: a value the client just typed in the last 1–2 user messages of THIS active checkout
+  may be used without re-asking.
+- Forbidden: silently stuffing an old/profile phone/size/ID into create_order.
+  Forbidden: blank "عطيني رقمك" / "واش الـ ID" when we already have a value — confirm it instead.
 
 Checkout ladder (STRICT — one question at a time):
 1. Quantity / which pack clear (skip if already chosen in recent chat).
@@ -141,7 +146,12 @@ class CustomerAgentService:
         system = request.system_prompt or DEFAULT_CUSTOMER_SYSTEM
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
         for row in request.history[-24:]:
-            messages.append({"role": row.role, "content": row.content})
+            content = str(row.content or "")
+            # If Laravel did not stamp content, add ISO at when present.
+            at = getattr(row, "at", None) or (row.get("at") if isinstance(row, dict) else None)
+            if at and not content.startswith("["):
+                content = f"[{at}] {content}"
+            messages.append({"role": row.role, "content": content})
 
         user_text = (request.text or "").strip()
         if media_note:

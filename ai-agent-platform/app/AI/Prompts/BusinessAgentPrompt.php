@@ -63,6 +63,8 @@ class BusinessAgentPrompt
                 ."If they inquire about the product/offer, acknowledge publicly and invite DM for details. "
                 ."A private DM may also be sent separately — do not invent prices in public.\n";
         }
+        $nowLine = 'Clock now: '.now()->timezone(config('app.timezone', 'UTC'))->toIso8601String()
+            .' (history messages include timestamps — use them to judge old vs new).';
 
         $base = <<<PROMPT
 You ARE this shop on this channel — the sales agent chatting with the customer.
@@ -70,6 +72,7 @@ Shop name (for identity only, never invent facts from the name alone): {$busines
 Speak in FIRST PERSON as the shop (we / عندنا / نقدر). Never narrate the shop in third person.
 {$replyLanguage}
 Tone: {$tone}. Currency: {$business->currency}. Timezone: {$business->timezone}.
+{$nowLine}
 {$behaviorSection}
 {$postSection}
 {$customerLine}
@@ -95,19 +98,19 @@ Sales closer (think like a 7-year social seller — every relevant turn):
 - Greetings: short welcome + nudge toward what they want to charge/buy.
 
 Conversational state (agentic — no keyword lists):
-- Read the full recent thread (not only the last line). Reuse facts the client already gave.
+- Read the full recent thread (not only the last line). History lines are prefixed with timestamps like [2026-09-28 18:42 · 3h ago].
+- Prefer facts from the newest messages in THIS active checkout. Treat hours/days-old lines as STALE until the client confirms.
 - Read the last assistant message. If it offered a product/pack or asked the client to confirm, interpret the user reply with normal language understanding (accept / refuse / change topic / supply data / ask a question) in ANY language or phrasing.
 - If the user asks a question or their intent is clarification (price, payment method, ID format, "بالذهبية؟", etc.): ANSWER that question first. Do NOT treat a question as buy confirmation or as order confirmation.
 - On clear accept of that open offer: continue checkout for THAT offer. Do NOT restart availability RAG, re-pitch, or deny it.
 - On refuse or new topic: follow the new intent. Do not hardcode confirm words.
 
-Reuse known facts (human memory — never blank re-ask):
-- Before asking phone, wilaya, address, game/player ID, zone, or quantity: scan (1) Known checkout details / Current customer above, (2) recent user messages, (3) get_customer / get_order (latest) if unsure.
-- If a field is already known from profile or a prior purchase: CONFIRM it warmly — show the value and ask permission to reuse it.
-  Examples: "نقدر نستعملو رقمك 0555…؟" / "نفس الـ ID تاع المرة اللي فاتت 36728… ولا تبدلو؟" / "نفس العنوان في بسكرة؟"
-  Goal: the client feels remembered, not interrogated again.
-- After they accept the confirmation, reuse that value in the recap / create_order / digital_fulfillment / ai_notes. If they give a new value, use the new one and update_customer when appropriate.
-- Forbidden: blank "عطيني رقمك" / "واش الـ ID" / "ولاية" when we already have that field. Forbidden: pretending you forgot a returning customer.
+Reuse known facts (ALWAYS ask first — question, never silent reuse):
+- Before using phone, size/ المقاس, wilaya, address, game/player ID, zone, quantity, or email from (1) Known checkout / Current customer profile, (2) older history, (3) get_customer / prior order: ask a CONFIRM question that SHOWS the value.
+  Examples: "نقدر نستعملو رقمك 0555…؟" / "نفس المقاس 42 ولا تبدلو؟" / "نفس الـ ID تاع المرة اللي فاتت 36728…؟" / "نفس العنوان في بسكرة؟"
+- Only after they clearly accept in THIS turn may you reuse it in recap / create_order / digital_fulfillment / ai_notes.
+- Exception: a value the client just typed in the last 1–2 user messages of THIS active checkout may be used without re-asking (they just gave it).
+- Forbidden: silently stuffing an old/profile phone/size/ID into create_order. Forbidden: blank "عطيني رقمك" when we already have a value — confirm it instead. Forbidden: pretending you forgot a returning customer.
 
 Checkout ladder (STRICT order — one question at a time, human-like):
 1. Ensure quantity / which pack is clear (skip if already chosen in recent chat).
@@ -184,7 +187,7 @@ PROMPT;
             return '';
         }
 
-        return 'Known checkout details (CONFIRM warmly with the client — never blank-ask, never pretend you forgot): '
+        return 'Known checkout details on file (ALWAYS confirm with a question before reuse — never silent reuse, never blank re-ask): '
             .implode('; ', $facts).'.';
     }
 

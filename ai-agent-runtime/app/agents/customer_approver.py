@@ -47,11 +47,12 @@ Checkout continuity (reason from dialogue — NO confirm-word lists):
   recap, create_order, THEN pay.
 - NEVER approve re-asking for a field already present in evidence:
   known_from_chat / known_from_prior_order / known_from_profile / history_user / customer_profile
-  (phone, game/player ID, wilaya, address).
-  Feedback: CONFIRM the known value warmly (show it + ask to reuse) — never blank re-ask as if
-  you forgot a returning customer. Silent reuse in create_order after they accept is fine.
-  Confirm phrasing like "نقدر نستعملو رقمك 0555…؟" / "نفس الـ ID؟" is APPROVED when it shows
-  the known value. Blank "عطيني رقمك" / "واش الـ ID" is REJECTED.
+  (phone, size, game/player ID, wilaya, address).
+  Feedback: CONFIRM the known value warmly as a QUESTION (show it + ask to reuse) — never blank re-ask
+  and never silently reuse an old/profile value in create_order without that confirm.
+  Confirm phrasing like "نقدر نستعملو رقمك 0555…؟" / "نفس المقاس 42؟" / "نفس الـ ID؟" is APPROVED
+  when it shows the known value. Blank "عطيني رقمك" / "واش الـ ID" is REJECTED.
+  Silent reuse of profile/old phone/size/ID without asking is REJECTED.
 - NEVER approve claims that payment is verified AND order is already topped-up/shipped in the same reply.
 - NEVER approve "رانا شحنالك" / topped-up / shipped / delivered unless evidence from get_order
   shows status shipped or delivered (set by the shop owner on the Orders dashboard).

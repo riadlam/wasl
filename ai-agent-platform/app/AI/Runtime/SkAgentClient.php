@@ -90,7 +90,17 @@ class SkAgentClient
             'message_type' => $inbound->type === 'comment' ? 'comment' : 'dm',
             'media_url' => $inbound->media_url,
             'media_type' => $inbound->media_type,
-            'history' => $history,
+            'history' => array_values(array_map(function ($row) {
+                $out = [
+                    'role' => (($row['role'] ?? '') === 'assistant') ? 'assistant' : 'user',
+                    'content' => self::asText($row['content'] ?? ''),
+                ];
+                if (! empty($row['at'])) {
+                    $out['at'] = self::asText($row['at']);
+                }
+
+                return $out;
+            }, $history)),
             'system_prompt' => $systemPrompt,
             'llm_model' => $this->resolveProviderModel($llmModel),
             'allow_reply' => $allowReply,

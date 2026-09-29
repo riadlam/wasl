@@ -10,11 +10,6 @@ const FB_SDK_SRC = 'https://connect.facebook.net/en_US/sdk.js';
 const FB_GRAPH_VERSION = 'v25.0';
 const META_ORIGINS = new Set(['https://www.facebook.com', 'https://web.facebook.com']);
 
-const FINISH_EVENTS = new Set([
-    'FINISH',
-    'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
-]);
-
 let sdkPromise = null;
 
 function loadFacebookSdk(appId) {
@@ -144,7 +139,9 @@ export async function launchWhatsAppEmbeddedSignup(metadata) {
         if (eventName === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
             coexistence = true;
             finished = true;
-        } else if (FINISH_EVENTS.has(eventName)) {
+            // SocialAPI: coexistence finish only carries waba_id — leave phone_number_id out of exchange.
+            phoneNumberId = '';
+        } else if (eventName === 'FINISH') {
             finished = true;
         } else if (eventName === 'ERROR' || eventName === 'CANCEL') {
             lastError = String(inner.error_message || inner.message || eventName);
@@ -153,15 +150,12 @@ export async function launchWhatsAppEmbeddedSignup(metadata) {
     window.addEventListener('message', onMessage);
 
     try {
+        // Exact extras shape from SocialAPI (Erwan) / Meta Coexistence docs.
         const extras = {
-            // Meta Coexistence: keep the existing WhatsApp Business app number.
+            setup: solutionId ? { solutionID: solutionId } : {},
             featureType: 'whatsapp_business_app_onboarding',
             sessionInfoVersion: '3',
-            setup: {},
         };
-        if (solutionId) {
-            extras.setup = { solutionID: solutionId };
-        }
 
         const response = await new Promise((resolve, reject) => {
             try {
@@ -184,13 +178,11 @@ export async function launchWhatsAppEmbeddedSignup(metadata) {
             }
             throw new Error(
                 lastError
-                || 'WhatsApp popup did not return an authorization code. '
-                    + 'If this domain is not allowlisted on SocialAPI’s Meta app, ask support@social-api.ai to add '
-                    + `${window.location.hostname}.`,
+                || 'WhatsApp popup did not return an authorization code. Close blockers and try again.',
             );
         }
 
-        const deadline = Date.now() + 10000;
+        const deadline = Date.now() + 12000;
         while ((!finished || !wabaId) && Date.now() < deadline) {
             // eslint-disable-next-line no-await-in-loop
             await new Promise((r) => setTimeout(r, 150));
@@ -203,12 +195,11 @@ export async function launchWhatsAppEmbeddedSignup(metadata) {
             );
         }
 
-        // Coexistence finish sometimes omits phone_number_id in the final event;
-        // keep whatever we captured from earlier session messages.
         return {
             code,
             waba_id: wabaId,
-            phone_number_id: phoneNumberId,
+            // Only include phone id for non-coexistence FINISH; coexistence must omit it.
+            phone_number_id: coexistence ? '' : phoneNumberId,
             coexistence,
         };
     } finally {

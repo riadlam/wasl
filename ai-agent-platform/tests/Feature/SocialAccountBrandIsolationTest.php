@@ -459,8 +459,8 @@ class SocialAccountBrandIsolationTest extends TestCase
                 && ($request['code'] ?? null) === 'AQD_test_code'
                 && ($request['metadata']['state'] ?? null) === 'wa_csrf_state'
                 && ($request['metadata']['waba_id'] ?? null) === 'waba_123'
-                && ($request['metadata']['phone_number_id'] ?? null) === 'phone_456'
-                && ($request['metadata']['coexistence'] ?? null) === true;
+                && ($request['metadata']['coexistence'] ?? null) === true
+                && ! array_key_exists('phone_number_id', $request['metadata'] ?? []);
         });
     }
 }

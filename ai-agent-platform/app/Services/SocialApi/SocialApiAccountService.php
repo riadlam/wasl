@@ -78,12 +78,12 @@ class SocialApiAccountService
             'waba_id' => $wabaId,
         ];
         $phoneNumberId = trim($phoneNumberId);
-        if ($phoneNumberId !== '') {
-            $metadata['phone_number_id'] = $phoneNumberId;
-        }
+
+        // Coexistence (FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING): SocialAPI wants waba_id only.
         if ($coexistence) {
             $metadata['coexistence'] = true;
-            $metadata['feature_type'] = 'whatsapp_business_app_onboarding';
+        } elseif ($phoneNumberId !== '') {
+            $metadata['phone_number_id'] = $phoneNumberId;
         }
 
         $result = $this->client->post('/oauth/exchange', [

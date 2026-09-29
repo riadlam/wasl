@@ -190,15 +190,23 @@ export default function ChannelsView() {
             }
 
             const embedded = await launchWhatsAppEmbeddedSignup(data.metadata);
-            await api.post('/social-accounts/whatsapp/complete', {
+            const completePayload = {
                 code: embedded.code,
                 state: data.state,
                 waba_id: embedded.waba_id,
-                phone_number_id: embedded.phone_number_id || undefined,
-                coexistence: embedded.coexistence || true,
-            });
+                coexistence: Boolean(embedded.coexistence),
+            };
+            // SocialAPI: coexistence finish only has waba_id — omit phone_number_id.
+            if (!embedded.coexistence && embedded.phone_number_id) {
+                completePayload.phone_number_id = embedded.phone_number_id;
+            }
+            await api.post('/social-accounts/whatsapp/complete', completePayload);
             setWaHelpOpen(false);
-            await afterChannelsConnected('WhatsApp connected for this shop.');
+            await afterChannelsConnected(
+                embedded.coexistence
+                    ? 'WhatsApp linked. Confirm the connection in the WhatsApp Business app on your phone if Meta asks.'
+                    : 'WhatsApp connected for this shop.',
+            );
         } catch (err) {
             const message = err?.message && !err?.response
                 ? err.message

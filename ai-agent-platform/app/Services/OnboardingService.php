@@ -57,7 +57,8 @@ class OnboardingService
     }
 
     /**
-     * Last live channel gone: return the shop to connect-a-channel so the gate matches reality.
+     * Last live channel gone: keep training progress (do not reset to onboarding).
+     * Resetting to onboarding caused reconnect to re-import DMs and duplicate the inbox.
      */
     public function onChannelDisconnected(Business $business): void
     {
@@ -67,19 +68,16 @@ class OnboardingService
             return;
         }
 
-        if ($business->onboarding_status === Business::ONBOARDING) {
-            return;
-        }
-
         $business->update([
-            'onboarding_status' => Business::ONBOARDING,
             'onboarding_meta' => array_merge($business->onboarding_meta ?? [], [
-                'error' => null,
-                'disconnected_at' => now()->toIso8601String(),
+                'last_channel_disconnected_at' => now()->toIso8601String(),
             ]),
         ]);
 
-        Log::info('onboarding.reset_no_channels', ['business_id' => $business->id]);
+        Log::info('onboarding.channel_disconnected_keep_status', [
+            'business_id' => $business->id,
+            'status' => $business->onboarding_status,
+        ]);
     }
 
     private function hasLiveChannel(Business $business): bool

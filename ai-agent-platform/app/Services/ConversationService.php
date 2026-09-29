@@ -190,6 +190,29 @@ class ConversationService
             ->where('socialapi_conversation_id', $remoteId)
             ->first();
 
+        // Reconnect can mint a new SocialAPI conversation id for the same customer thread.
+        if (! $existing) {
+            $participantId = $row['participant_id'] ?? $row['user_id'] ?? $row['platform_id'] ?? null;
+            if (is_string($participantId) && $participantId !== '') {
+                $existing = Conversation::query()
+                    ->forBusiness($business->id)
+                    ->where('social_account_id', $account->id)
+                    ->whereHas('customer', function ($q) use ($participantId) {
+                        $q->where('platform_user_id', $participantId);
+                    })
+                    ->orderByDesc('id')
+                    ->first();
+            }
+            if (! $existing && $customer->id) {
+                $existing = Conversation::query()
+                    ->forBusiness($business->id)
+                    ->where('social_account_id', $account->id)
+                    ->where('customer_id', $customer->id)
+                    ->orderByDesc('id')
+                    ->first();
+            }
+        }
+
         $lastAt = null;
         if (! empty($row['last_message_at'])) {
             try {
@@ -202,6 +225,7 @@ class ConversationService
         if ($existing) {
             $existing->fill(array_filter([
                 'social_account_id' => $account->id,
+                'socialapi_conversation_id' => $remoteId,
                 'platform' => $row['platform'] ?? $account->platform,
                 'customer_id' => $existing->customer_id ?: $customer->id,
                 'last_message_at' => $lastAt,
@@ -391,10 +415,31 @@ class ConversationService
         $existing = Message::query()->where('socialapi_message_id', $remoteId)->first();
         if (! $existing && $platformId) {
             // Webhooks often store a different SocialAPI id; platform_id is the stable key.
+            // Search the whole shop so reconnect/history import cannot fork duplicates
+            // into a second conversation for the same Meta message.
             $existing = Message::query()
-                ->where('conversation_id', $conversation->id)
+                ->where('business_id', $conversation->business_id)
                 ->where('metadata->platform_id', $platformId)
+                ->orderBy('id')
                 ->first();
+        }
+
+        // Outbound AI/human echoes sometimes lack platform_id until list sync — match text+time in-thread.
+        if (! $existing) {
+            $text = trim((string) ($row['text'] ?? $row['content'] ?? $row['message'] ?? ''));
+            $direction = $this->mapRemoteDirection($row['direction'] ?? null);
+            if ($text !== '' && $createdAt) {
+                $existing = Message::query()
+                    ->where('conversation_id', $conversation->id)
+                    ->where('direction', $direction)
+                    ->where('text', $text)
+                    ->whereBetween('created_at', [
+                        $createdAt->copy()->subSeconds(90),
+                        $createdAt->copy()->addSeconds(90),
+                    ])
+                    ->orderBy('id')
+                    ->first();
+            }
         }
 
         $probe = new Message([
@@ -407,6 +452,10 @@ class ConversationService
 
         if ($existing) {
             $dirty = false;
+            if ((int) $existing->conversation_id !== (int) $conversation->id) {
+                $existing->conversation_id = $conversation->id;
+                $dirty = true;
+            }
             if ($existing->socialapi_message_id !== $remoteId) {
                 $existing->socialapi_message_id = $remoteId;
                 $dirty = true;
@@ -817,6 +866,19 @@ class ConversationService
         }
 
         return (float) $message->id;
+    }
+
+    /**
+     * Public entry for reconnect / merge cleanup.
+     */
+    public function dedupeConversationMessages(int $conversationId): void
+    {
+        $conversation = Conversation::query()->find($conversationId);
+        if (! $conversation) {
+            return;
+        }
+
+        $this->repairConversationMessageOrder($conversation);
     }
 
     /**

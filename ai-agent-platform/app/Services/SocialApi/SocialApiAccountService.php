@@ -2,11 +2,19 @@
 
 namespace App\Services\SocialApi;
 
+use App\Models\AiProfilePerChannel;
 use App\Models\Business;
+use App\Models\BusinessTrainingSnapshot;
+use App\Models\ChannelProfileInterview;
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\PostAiSetting;
 use App\Models\SocialAccount;
 use App\Services\OnboardingService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class SocialApiAccountService
@@ -458,32 +466,161 @@ class SocialApiAccountService
 
         $platform = $this->resolvePlatform($remote);
         $identity = $this->resolveChannelIdentity($remote, $platform);
+        $platformAccountId = is_string($identity['platform_account_id'] ?? null)
+            ? trim((string) $identity['platform_account_id'])
+            : '';
 
-        $account = SocialAccount::query()->updateOrCreate(
-            [
+        $payload = [
+            'provider' => 'socialapi',
+            'socialapi_account_id' => $accountId,
+            'socialapi_brand_id' => $shopBrand,
+            'platform' => $platform,
+            'platform_account_id' => $platformAccountId !== '' ? $platformAccountId : null,
+            'name' => $identity['name'],
+            'username' => $identity['username'],
+            'avatar_url' => $identity['avatar_url'],
+            'status' => 'connected',
+            'metadata' => $remote,
+            'connected_at' => now(),
+            'disconnected_at' => null,
+        ];
+
+        // Prefer exact SocialAPI id; otherwise reuse the same Page/WA number after reconnect
+        // (SocialAPI issues a new account id when the previous one was deleted).
+        $account = SocialAccount::query()
+            ->where('business_id', $business->id)
+            ->where('socialapi_account_id', $accountId)
+            ->first();
+
+        if (! $account && $platformAccountId !== '' && $platform !== 'simulator') {
+            $account = SocialAccount::query()
+                ->where('business_id', $business->id)
+                ->where('platform', $platform)
+                ->where('platform_account_id', $platformAccountId)
+                ->orderByRaw("CASE WHEN status = 'disconnected' THEN 1 ELSE 0 END")
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if ($account) {
+            $account->fill($payload);
+            $account->save();
+            $this->absorbDuplicateChannelRows($business, $account, $platform, $platformAccountId, (string) $accountId);
+        } else {
+            $account = SocialAccount::query()->create(array_merge([
                 'business_id' => $business->id,
-                'socialapi_account_id' => $accountId,
-            ],
-            [
-                'provider' => 'socialapi',
-                'socialapi_brand_id' => $shopBrand,
-                'platform' => $platform,
-                'platform_account_id' => $identity['platform_account_id'],
-                'name' => $identity['name'],
-                'username' => $identity['username'],
-                'avatar_url' => $identity['avatar_url'],
-                'status' => 'connected',
-                'metadata' => $remote,
-                'connected_at' => now(),
-                'disconnected_at' => null,
-            ],
-        );
+            ], $payload));
+        }
 
         if ($platform === 'facebook') {
             $this->enrichFacebookPageIdentity($account);
         }
 
         return $account->fresh() ?? $account;
+    }
+
+    /**
+     * After reconnect, fold any stray rows for the same page into the kept account
+     * so inbox / profiles / conversations stay on one social_account_id.
+     */
+    private function absorbDuplicateChannelRows(
+        Business $business,
+        SocialAccount $keep,
+        string $platform,
+        string $platformAccountId,
+        string $socialapiAccountId,
+    ): void {
+        if ($platformAccountId === '' || $platform === 'simulator') {
+            return;
+        }
+
+        $dupes = SocialAccount::query()
+            ->where('business_id', $business->id)
+            ->where('id', '!=', $keep->id)
+            ->where(function ($q) use ($platform, $platformAccountId, $socialapiAccountId) {
+                $q->where(function ($inner) use ($platform, $platformAccountId) {
+                    $inner->where('platform', $platform)
+                        ->where('platform_account_id', $platformAccountId);
+                })->orWhere('socialapi_account_id', $socialapiAccountId);
+            })
+            ->get();
+
+        foreach ($dupes as $dupe) {
+            $this->reassignChannelOwnedRows($dupe, $keep);
+            $dupe->delete();
+        }
+    }
+
+    private function reassignChannelOwnedRows(SocialAccount $from, SocialAccount $to): void
+    {
+        if ($from->id === $to->id) {
+            return;
+        }
+
+        Conversation::query()
+            ->where('social_account_id', $from->id)
+            ->update(['social_account_id' => $to->id]);
+
+        AiProfilePerChannel::query()
+            ->where('social_account_id', $from->id)
+            ->update(['social_account_id' => $to->id]);
+
+        ChannelProfileInterview::query()
+            ->where('social_account_id', $from->id)
+            ->update(['social_account_id' => $to->id]);
+
+        PostAiSetting::query()
+            ->where('social_account_id', $from->id)
+            ->update(['social_account_id' => $to->id]);
+
+        BusinessTrainingSnapshot::query()
+            ->where('social_account_id', $from->id)
+            ->update(['social_account_id' => $to->id]);
+
+        $this->mergeDuplicateConversationsForAccount($to);
+    }
+
+    /**
+     * Same customer + same channel should be one inbox thread after reconnect.
+     */
+    private function mergeDuplicateConversationsForAccount(SocialAccount $account): void
+    {
+        $groups = Conversation::query()
+            ->where('social_account_id', $account->id)
+            ->whereNotNull('customer_id')
+            ->select('customer_id', DB::raw('COUNT(*) as c'), DB::raw('MIN(id) as keep_id'))
+            ->groupBy('customer_id')
+            ->having('c', '>', 1)
+            ->get();
+
+        foreach ($groups as $group) {
+            $keepId = (int) $group->keep_id;
+            $dropIds = Conversation::query()
+                ->where('social_account_id', $account->id)
+                ->where('customer_id', $group->customer_id)
+                ->where('id', '!=', $keepId)
+                ->pluck('id')
+                ->all();
+
+            if ($dropIds === []) {
+                continue;
+            }
+
+            Message::query()
+                ->whereIn('conversation_id', $dropIds)
+                ->update(['conversation_id' => $keepId]);
+
+            Conversation::query()->whereIn('id', $dropIds)->delete();
+
+            try {
+                app(\App\Services\ConversationService::class)->dedupeConversationMessages($keepId);
+            } catch (\Throwable $e) {
+                Log::warning('inbox.dedupe_after_reconnect_failed', [
+                    'conversation_id' => $keepId,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
@@ -1049,6 +1186,28 @@ class SocialApiAccountService
         }
 
         $account = SocialAccount::query()->where('socialapi_account_id', $accountId)->first();
+
+        // Reconnect after SocialAPI delete: new remote account id, same Page / WA number.
+        if (! $account) {
+            $platformHint = $this->resolvePlatform($data);
+            $identityHint = $this->resolveChannelIdentity(array_merge($data, [
+                'id' => $accountId,
+                'platform' => $platformHint,
+            ]), $platformHint);
+            $platformAccountId = is_string($identityHint['platform_account_id'] ?? null)
+                ? trim((string) $identityHint['platform_account_id'])
+                : '';
+            $brandId = isset($data['brand_id']) ? (string) $data['brand_id'] : '';
+            if ($platformAccountId !== '' && $brandId !== '') {
+                $account = SocialAccount::query()
+                    ->where('socialapi_brand_id', $brandId)
+                    ->where('platform', $platformHint)
+                    ->where('platform_account_id', $platformAccountId)
+                    ->orderByDesc('id')
+                    ->first();
+            }
+        }
+
         if ($account) {
             $business = $account->business;
             $remoteBrand = isset($data['brand_id']) ? (string) $data['brand_id'] : '';
@@ -1065,6 +1224,7 @@ class SocialApiAccountService
 
             $account->update([
                 'status' => 'connected',
+                'socialapi_account_id' => $accountId,
                 'platform' => $platform,
                 'name' => $identity['name'] ?? $account->name,
                 'username' => $identity['username'] ?? $account->username,
@@ -1078,6 +1238,16 @@ class SocialApiAccountService
             $fresh = $account->fresh();
             if ($fresh) {
                 $this->enrichFacebookPageIdentity($fresh);
+                $platformAccountId = is_string($fresh->platform_account_id) ? (string) $fresh->platform_account_id : '';
+                if ($fresh->business && $platformAccountId !== '') {
+                    $this->absorbDuplicateChannelRows(
+                        $fresh->business,
+                        $fresh,
+                        (string) $fresh->platform,
+                        $platformAccountId,
+                        (string) $accountId,
+                    );
+                }
             }
 
             return $fresh ?? $account;

@@ -22,6 +22,7 @@ class TelegramBotClient
         $payload = [
             'chat_id' => $chatId,
             'text' => $text,
+            'parse_mode' => 'HTML',
             'disable_web_page_preview' => true,
         ];
         if ($inlineKeyboard) {
@@ -51,6 +52,7 @@ class TelegramBotClient
         ];
         if ($caption !== null && $caption !== '') {
             $fields['caption'] = mb_substr($caption, 0, 1024);
+            $fields['parse_mode'] = 'HTML';
         }
         if ($inlineKeyboard) {
             $fields['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard], JSON_UNESCAPED_UNICODE);
@@ -73,6 +75,7 @@ class TelegramBotClient
             'chat_id' => $chatId,
             'message_id' => $messageId,
             'text' => $text,
+            'parse_mode' => 'HTML',
             'disable_web_page_preview' => true,
         ];
         if ($inlineKeyboard !== null) {
@@ -98,6 +101,7 @@ class TelegramBotClient
             'chat_id' => $chatId,
             'message_id' => $messageId,
             'caption' => mb_substr($caption, 0, 1024),
+            'parse_mode' => 'HTML',
         ];
         if ($inlineKeyboard !== null) {
             $payload['reply_markup'] = [
@@ -128,6 +132,7 @@ class TelegramBotClient
         ];
         if ($caption !== null) {
             $media['caption'] = mb_substr($caption, 0, 1024);
+            $media['parse_mode'] = 'HTML';
         }
 
         $fields = [

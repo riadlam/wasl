@@ -7,6 +7,7 @@ use App\AI\Tools\Owner\ConfirmPendingAction;
 use App\Models\AgentPendingAction;
 use App\Models\AiCampaignSlot;
 use App\Services\Campaigns\CampaignSlotApprovalService;
+use App\Support\TelegramHtml;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -46,27 +47,49 @@ class TelegramWebhookService
         if (preg_match('/^\/start(?:\s+(.+))?$/u', $text, $m)) {
             $code = trim((string) ($m[1] ?? ''));
             if ($code === '') {
-                $this->bot->sendMessage($chatId, 'Open Settings → Integrations in Wasl and tap Connect Telegram to get your link.');
+                $this->bot->sendMessage(
+                    $chatId,
+                    TelegramHtml::join([
+                        '🔗 '.TelegramHtml::bold('Connect Telegram'),
+                        '',
+                        'Open '.TelegramHtml::bold('Settings → Integrations').' in Wasl and tap '.TelegramHtml::bold('Connect Telegram').' to get your personal link.',
+                    ]),
+                );
 
                 return;
             }
 
             $business = $this->links->bindFromStart($code, $chatId, $username);
             if (! $business) {
-                $this->bot->sendMessage($chatId, 'This link expired or is invalid. Generate a new one from Wasl Settings → Integrations.');
+                $this->bot->sendMessage(
+                    $chatId,
+                    TelegramHtml::join([
+                        '⚠️ '.TelegramHtml::bold('Link expired'),
+                        '',
+                        'Generate a new one from Wasl '.TelegramHtml::bold('Settings → Integrations').'.',
+                    ]),
+                );
 
                 return;
             }
 
             $fromName = trim((string) (($message['from']['first_name'] ?? '').' '.($message['from']['last_name'] ?? '')));
             $shop = $business->name;
-            $hello = $fromName !== '' ? "Welcome, {$fromName}!" : 'Welcome!';
+            $hello = $fromName !== '' ? 'Welcome, '.$fromName.'!' : 'Welcome!';
             $this->bot->sendMessage(
                 $chatId,
-                "{$hello}\n\n"
-                ."You are connected to {$shop} on Wasl.\n"
-                ."Alerts for new orders, AI handoffs, and post approvals will land here.\n\n"
-                .'Connection established — you can keep this chat open for shop alerts.',
+                TelegramHtml::join([
+                    '🎉 '.TelegramHtml::bold($hello),
+                    '',
+                    '✅ Connected to '.TelegramHtml::bold($shop).' on Wasl.',
+                    '',
+                    'You’ll get alerts here for:',
+                    '🛒 New orders',
+                    '🙋 AI handoffs',
+                    '📝 Post & story approvals',
+                    '',
+                    TelegramHtml::italic('Keep this chat open for shop alerts.'),
+                ]),
             );
         }
     }
@@ -192,11 +215,28 @@ class TelegramWebhookService
                 $this->slotApprovals->lockTelegramActions(
                     $fresh,
                     match ($status) {
-                        AiCampaignSlot::STATUS_REGEN_REQUESTED, AiCampaignSlot::STATUS_GENERATING => "⏳ Still generating…\nSlot #{$slotId}\n\nPlease wait — buttons stay locked.",
-                        AiCampaignSlot::STATUS_PUBLISHING => "✅ Already accepting…\nSlot #{$slotId}",
-                        AiCampaignSlot::STATUS_SCHEDULED => "✅ Already scheduled\nSlot #{$slotId}",
-                        AiCampaignSlot::STATUS_CANCELLED => "❌ Already cancelled\nSlot #{$slotId}",
-                        default => "Slot #{$slotId}\nStatus: {$status}",
+                        AiCampaignSlot::STATUS_REGEN_REQUESTED, AiCampaignSlot::STATUS_GENERATING => TelegramHtml::join([
+                            '⏳ '.TelegramHtml::bold('Still generating…'),
+                            '🧩 Slot '.TelegramHtml::code('#'.$slotId),
+                            '',
+                            'Please wait — buttons stay locked.',
+                        ]),
+                        AiCampaignSlot::STATUS_PUBLISHING => TelegramHtml::join([
+                            '✅ '.TelegramHtml::bold('Already accepting…'),
+                            '🧩 Slot '.TelegramHtml::code('#'.$slotId),
+                        ]),
+                        AiCampaignSlot::STATUS_SCHEDULED => TelegramHtml::join([
+                            '✅ '.TelegramHtml::bold('Already scheduled'),
+                            '🧩 Slot '.TelegramHtml::code('#'.$slotId),
+                        ]),
+                        AiCampaignSlot::STATUS_CANCELLED => TelegramHtml::join([
+                            '❌ '.TelegramHtml::bold('Already cancelled'),
+                            '🧩 Slot '.TelegramHtml::code('#'.$slotId),
+                        ]),
+                        default => TelegramHtml::join([
+                            '🧩 Slot '.TelegramHtml::code('#'.$slotId),
+                            'Status: '.TelegramHtml::escape($status),
+                        ]),
                     },
                 );
             } catch (Throwable) {

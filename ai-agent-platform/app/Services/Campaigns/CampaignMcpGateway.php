@@ -110,6 +110,9 @@ class CampaignMcpGateway
         ?string $requestKey = null,
     ): array {
         $this->assertEnabled();
+        if ($story && $mediaIds === []) {
+            throw new RuntimeException('Stories require an image. Upload media before scheduling a Facebook/Instagram story.');
+        }
         $tool = $this->tool('create_post');
         $known = $this->schema->known();
         $props = $this->schema->properties($tool);
@@ -238,36 +241,37 @@ class CampaignMcpGateway
     private function applyStory(string $tool, array $args, bool $known): array
     {
         $field = $known ? $this->schema->storyField($tool) : null;
-        if ($field === null) {
-            if (isset($args['targets']) && is_array($args['targets'])) {
-                foreach ($args['targets'] as $i => $target) {
-                    $args['targets'][$i]['platform_data'] = array_merge(
-                        is_array($target['platform_data'] ?? null) ? $target['platform_data'] : [],
-                        ['content_type' => 'story', 'post_type' => 'story'],
-                    );
+        if ($field !== null) {
+            $path = $field['path'];
+            if (($path[1] ?? null) === '*' && isset($args[$path[0]]) && is_array($args[$path[0]])) {
+                $rest = array_slice($path, 2);
+                foreach ($args[$path[0]] as $i => $item) {
+                    data_set($item, implode('.', $rest), $field['value']);
+                    $args[$path[0]][$i] = $item;
                 }
             } else {
-                $args['platform_data'] = array_merge(
-                    is_array($args['platform_data'] ?? null) ? $args['platform_data'] : [],
+                data_set($args, implode('.', $path), $field['value']);
+            }
+
+            return $args;
+        }
+
+        // No live schema / no story enum: set top-level post_type AND per-target
+        // platform_data so Facebook/Instagram stories land correctly on SocialAPI.
+        $args['post_type'] = 'story';
+        if (isset($args['targets']) && is_array($args['targets'])) {
+            foreach ($args['targets'] as $i => $target) {
+                $args['targets'][$i]['platform_data'] = array_merge(
+                    is_array($target['platform_data'] ?? null) ? $target['platform_data'] : [],
                     ['content_type' => 'story', 'post_type' => 'story'],
                 );
             }
-
-            return $args;
+        } else {
+            $args['platform_data'] = array_merge(
+                is_array($args['platform_data'] ?? null) ? $args['platform_data'] : [],
+                ['content_type' => 'story', 'post_type' => 'story'],
+            );
         }
-
-        $path = $field['path'];
-        if (($path[1] ?? null) === '*' && isset($args[$path[0]]) && is_array($args[$path[0]])) {
-            $rest = array_slice($path, 2);
-            foreach ($args[$path[0]] as $i => $item) {
-                data_set($item, implode('.', $rest), $field['value']);
-                $args[$path[0]][$i] = $item;
-            }
-
-            return $args;
-        }
-
-        data_set($args, implode('.', $path), $field['value']);
 
         return $args;
     }

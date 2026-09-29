@@ -10,6 +10,7 @@ use App\Models\Business;
 use App\Models\TelegramOutboundMessage;
 use App\Services\Telegram\TelegramAlertService;
 use App\Services\Telegram\TelegramLinkService;
+use App\Support\TelegramHtml;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
@@ -85,16 +86,23 @@ class CampaignSlotApprovalService
         $when = optional($slot->scheduled_at)?->timezone($business->timezone ?: 'Africa/Algiers')?->format('D j M H:i');
         $title = trim((string) ($slot->title ?? ''));
         $hasImage = $slot->asset && $slot->asset->isImage();
+        $isStory = $slot->slot_kind === AiCampaignSlot::KIND_STORY;
+        $kindEmoji = $isStory ? '📱' : '📝';
+        $kindLabel = $isStory ? 'Story' : 'Post';
 
-        $text = "📝 Campaign post ready for approval\n"
-            ."Shop: {$shop}\n"
-            .'Day '.$slot->day_index.' · '.ucfirst((string) $slot->slot_kind)
-            .($when ? " · {$when}" : '')
-            .($title !== '' ? "\nIdea: {$title}" : '')
-            .($hasImage ? "\n🖼 Post image attached above" : '')
-            ."\n\n{$preview}"
-            ."\n\n✏️ Edit opens Wasl with this post — Save updates this Telegram card too."
-            ."\n⏱ If you Accept after the schedule time, the post is cancelled as delayed.";
+        $text = TelegramHtml::join([
+            $kindEmoji.' '.TelegramHtml::bold('Campaign '.$kindLabel.' ready'),
+            '🏪 '.TelegramHtml::escape($shop),
+            '📅 Day '.$slot->day_index.' · '.TelegramHtml::escape($kindLabel)
+                .($when ? ' · '.$when : ''),
+            $title !== '' ? '💡 Idea: '.TelegramHtml::escape($title) : null,
+            $hasImage ? '🖼 Image attached above' : ($isStory ? '⚠️ Stories need an image — regenerate if missing' : null),
+            '',
+            TelegramHtml::escape($preview),
+            '',
+            '✏️ Edit opens Wasl — Save updates this card too.',
+            '⏱ Accept after schedule time → cancelled as delayed.',
+        ]);
 
         // Photo captions are capped at 1024 by Telegram.
         return mb_strlen($text) > 1024 ? mb_substr($text, 0, 1021).'…' : $text;
@@ -272,7 +280,13 @@ class CampaignSlotApprovalService
 
         $this->lockTelegramActions(
             $slot,
-            "✅ Accepting…\nShop: ".($business->name ?: 'Shop')."\nSlot #{$slot->id}\n\nScheduling on SocialAPI — buttons locked.",
+            TelegramHtml::join([
+                '✅ '.TelegramHtml::bold('Accepting…'),
+                '🏪 '.TelegramHtml::escape($business->name ?: 'Shop'),
+                '🧩 Slot '.TelegramHtml::code('#'.$slot->id),
+                '',
+                'Scheduling on SocialAPI — buttons locked.',
+            ]),
         );
 
         $targets = $slot->targets()
@@ -303,6 +317,10 @@ class CampaignSlotApprovalService
                         $mediaIds = [$mediaCache[$asset->id]];
                     }
                 }
+                $isStory = $slot->slot_kind === AiCampaignSlot::KIND_STORY;
+                if ($isStory && $mediaIds === []) {
+                    throw new RuntimeException('Stories require an image. Regenerate this slot with media before accepting.');
+                }
                 $accountIds = $group->map(fn (AiCampaignSlotTarget $t) => (string) $t->socialAccount?->socialapi_account_id)
                     ->filter()->values()->all();
                 if ($accountIds === []) {
@@ -314,7 +332,7 @@ class CampaignSlotApprovalService
                     $caption,
                     $this->campaigns->publishAtForSlot($slot)->toIso8601String(),
                     $mediaIds,
-                    $slot->slot_kind === AiCampaignSlot::KIND_STORY,
+                    $isStory,
                     ($slot->client_request_key ?: 'wasl-slot-'.$slot->id).'-'.$platform.'-ok',
                 );
 
@@ -346,10 +364,17 @@ class CampaignSlotApprovalService
 
         $when = optional($slot->scheduled_at)?->timezone($business->timezone ?: 'Africa/Algiers')?->format('D j M H:i');
         $preview = mb_substr(trim((string) $slot->caption), 0, 400);
+        $isStory = $slot->slot_kind === AiCampaignSlot::KIND_STORY;
         $this->alerts->updateFor(
             $slot,
             TelegramOutboundMessage::KIND_CAMPAIGN_SLOT_APPROVAL,
-            '✅ Scheduled'.($when ? " for {$when}" : '')."\nSlot #{$slot->id}\n\n{$preview}",
+            TelegramHtml::join([
+                '✅ '.TelegramHtml::bold(($isStory ? 'Story' : 'Post').' scheduled'),
+                $when ? '🗓️ '.$when : null,
+                '🧩 Slot '.TelegramHtml::code('#'.$slot->id),
+                '',
+                TelegramHtml::escape($preview),
+            ]),
             [],
             true,
         );
@@ -447,7 +472,12 @@ class CampaignSlotApprovalService
 
         $this->lockTelegramActions(
             $slot,
-            "⏱ Cancelled — schedule passed\nSlot #{$slot->id}\n\n{$reason}",
+            TelegramHtml::join([
+                '⏱ '.TelegramHtml::bold('Cancelled — schedule passed'),
+                '🧩 Slot '.TelegramHtml::code('#'.$slot->id),
+                '',
+                TelegramHtml::escape($reason),
+            ]),
         );
 
         $slot->targets()
@@ -482,7 +512,12 @@ class CampaignSlotApprovalService
 
         $this->lockTelegramActions(
             $slot,
-            "❌ Cancelling…\nSlot #{$slot->id}\n\nButtons locked.",
+            TelegramHtml::join([
+                '❌ '.TelegramHtml::bold('Cancelling…'),
+                '🧩 Slot '.TelegramHtml::code('#'.$slot->id),
+                '',
+                'Buttons locked.',
+            ]),
         );
 
         $slot->targets()
@@ -503,7 +538,12 @@ class CampaignSlotApprovalService
             $this->alerts->updateFor(
                 $slot,
                 TelegramOutboundMessage::KIND_CAMPAIGN_SLOT_APPROVAL,
-                "❌ Cancelled\nSlot #{$slot->id}\n\nThis post will not be published.",
+                TelegramHtml::join([
+                    '❌ '.TelegramHtml::bold('Cancelled'),
+                    '🧩 Slot '.TelegramHtml::code('#'.$slot->id),
+                    '',
+                    'This post will not be published.',
+                ]),
                 [],
                 true,
             );
@@ -530,11 +570,14 @@ class CampaignSlotApprovalService
         // Drop buttons + show generating on the SAME message immediately.
         $this->lockTelegramActions(
             $slot,
-            "⏳ Generating a stronger version…\n"
-            ."Shop: {$shop}\n"
-            .'Day '.$slot->day_index.' · '.ucfirst((string) $slot->slot_kind)."\n"
-            ."Slot #{$slot->id}\n\n"
-            ."Improving this caption with your shop voice and campaign notes. Buttons return when ready.",
+            TelegramHtml::join([
+                '⏳ '.TelegramHtml::bold('Generating a stronger version…'),
+                '🏪 '.TelegramHtml::escape($shop),
+                '📅 Day '.$slot->day_index.' · '.TelegramHtml::escape(ucfirst((string) $slot->slot_kind)),
+                '🧩 Slot '.TelegramHtml::code('#'.$slot->id),
+                '',
+                'Improving caption with your shop voice. Buttons return when ready.',
+            ]),
         );
 
         $seedCaption = trim((string) $slot->caption);

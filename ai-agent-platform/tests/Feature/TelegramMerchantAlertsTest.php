@@ -106,7 +106,10 @@ class TelegramMerchantAlertsTest extends TestCase
         $this->assertTrue($created['ok']);
 
         Bus::assertDispatched(SendTelegramAlertJob::class, function (SendTelegramAlertJob $job) {
-            return $job->kind === TelegramOutboundMessage::KIND_ORDER_CREATED && $job->mode === 'send';
+            return $job->kind === TelegramOutboundMessage::KIND_ORDER_CREATED
+                && $job->mode === 'send'
+                && str_contains($job->text, '🛒')
+                && str_contains($job->text, '<b>New order</b>');
         });
     }
 

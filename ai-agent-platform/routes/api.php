@@ -168,6 +168,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/social-accounts', [SocialAccountController::class, 'index'])->middleware('permission:settings.view|inbox.view');
         Route::post('/social-accounts/connect', [SocialAccountController::class, 'connect'])->middleware('permission:settings.manage');
+        Route::post('/social-accounts/import', [SocialAccountController::class, 'import'])->middleware('permission:settings.manage');
         Route::post('/social-accounts/whatsapp/complete', [SocialAccountController::class, 'completeWhatsApp'])->middleware('permission:settings.manage');
         Route::get('/social-accounts/pending/{connectionId}', [SocialAccountController::class, 'pending'])->middleware('permission:settings.manage');
         Route::post('/social-accounts/pending/select', [SocialAccountController::class, 'selectPending'])->middleware('permission:settings.manage');

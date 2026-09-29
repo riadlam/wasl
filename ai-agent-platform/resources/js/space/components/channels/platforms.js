@@ -17,7 +17,7 @@ import { SiThreads } from 'react-icons/si';
 /**
  * Channel platforms available in Wasl.
  * oauth = connect returns auth_url to redirect.
- * embedded = WhatsApp Meta Embedded Signup (SDK popup + oauth/exchange).
+ * invite = SocialAPI-hosted connect link (WhatsApp — no Wasl domain allowlist).
  * dashboard = guided connect (credentials / SocialAPI dashboard).
  */
 export const SOCIALAPI_PLATFORMS = [
@@ -42,9 +42,9 @@ export const SOCIALAPI_PLATFORMS = [
     {
         id: 'whatsapp',
         label: 'WhatsApp',
-        blurb: 'Business DMs via Meta Embedded Signup.',
+        blurb: 'Business DMs via SocialAPI invite signup.',
         group: 'inbox',
-        mode: 'embedded',
+        mode: 'invite',
         Icon: FaWhatsapp,
         color: '#25D366',
     },

@@ -65,7 +65,11 @@ class SocialAccountController extends Controller
         }
 
         try {
-            $result = $this->accounts->connectUrl($business, $data['platform'], $request->user()->id);
+            // WhatsApp: SocialAPI-hosted invite (no Meta domain allowlist on Wasl).
+            // Embedded Signup stays available via /whatsapp/complete for allowlisted domains.
+            $result = $data['platform'] === 'whatsapp'
+                ? $this->accounts->whatsappInviteUrl($business)
+                : $this->accounts->connectUrl($business, $data['platform'], $request->user()->id);
         } catch (Throwable $e) {
             report($e);
 
@@ -84,8 +88,53 @@ class SocialAccountController extends Controller
                 : null,
             'state' => is_string($result['state'] ?? null) ? $result['state'] : null,
             'platform' => $data['platform'],
+            'mode' => is_string($result['mode'] ?? null) ? $result['mode'] : null,
             'metadata' => $metadata,
             'message' => is_string($result['message'] ?? null) ? $result['message'] : null,
+        ]);
+    }
+
+    /**
+     * Import accounts already connected on SocialAPI for this shop brand
+     * (e.g. after finishing a WhatsApp invite / dashboard connect).
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'platform' => ['nullable', Rule::in([
+                'instagram', 'facebook', 'whatsapp', 'threads', 'tiktok',
+                'linkedin', 'twitter', 'youtube', 'google', 'pinterest',
+                'telegram', 'bluesky', 'zalo',
+            ])],
+        ]);
+
+        $business = CurrentBusiness::require();
+
+        try {
+            $saved = $this->accounts->importBrandAccounts(
+                $business,
+                isset($data['platform']) ? (string) $data['platform'] : null,
+            );
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => 'Could not refresh channels from SocialAPI. Try again.',
+            ], 422);
+        }
+
+        if ($saved !== []) {
+            $this->onboarding->onChannelConnected($business, $saved[0]);
+            $this->onboarding->ensureProfilesForAccounts($business, $saved);
+        }
+
+        return response()->json([
+            'accounts' => collect($saved)->map(function (SocialAccount $account) {
+                $account->loadMissing('logoAsset');
+
+                return $account->toChannelApiArray();
+            })->values(),
+            'count' => count($saved),
         ]);
     }
 

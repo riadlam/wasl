@@ -56,6 +56,9 @@ class SocialApiAccountService
     /**
      * Finish WhatsApp Meta Embedded Signup (SocialAPI proxy OAuth exchange).
      *
+     * Prefer {@see whatsappInviteUrl()} when the Wasl domain is not allowlisted
+     * on SocialAPI's Meta app — invite links run on api.social-api.ai.
+     *
      * @see https://docs.social-api.ai/connectors/whatsapp
      *
      * @throws RuntimeException
@@ -100,6 +103,136 @@ class SocialApiAccountService
         ]);
 
         return $this->upsertFromRemote($business, $remote);
+    }
+
+    /**
+     * SocialAPI-hosted WhatsApp connect (no Wasl domain allowlist required).
+     *
+     * @see https://docs.social-api.ai/api-reference/invites/create-an-invite-link
+     *
+     * @return array{auth_url: string, platform: string, mode: string}
+     */
+    public function whatsappInviteUrl(Business $business): array
+    {
+        $brandId = $this->ensureBrand($business);
+
+        $existing = $this->activeInviteUrl($brandId, 'whatsapp');
+        if ($existing !== null) {
+            return [
+                'auth_url' => $existing,
+                'platform' => 'whatsapp',
+                'mode' => 'invite',
+                'message' => 'Open this SocialAPI invite to connect WhatsApp for this shop.',
+            ];
+        }
+
+        try {
+            $created = $this->client->post('/invites', [
+                'platform' => 'whatsapp',
+                'brand_id' => $brandId,
+                'expires_in_days' => 7,
+            ]);
+        } catch (RuntimeException $e) {
+            // Race: another active invite appeared between list and create.
+            if (str_contains(strtolower($e->getMessage()), 'active invite')
+                || str_contains(strtolower($e->getMessage()), 'resource.conflict')) {
+                $existing = $this->activeInviteUrl($brandId, 'whatsapp');
+                if ($existing !== null) {
+                    return [
+                        'auth_url' => $existing,
+                        'platform' => 'whatsapp',
+                        'mode' => 'invite',
+                        'message' => 'Open this SocialAPI invite to connect WhatsApp for this shop.',
+                    ];
+                }
+            }
+
+            throw $e;
+        }
+
+        $url = $this->firstNonEmptyString([
+            $created['url'] ?? null,
+            isset($created['token']) ? 'https://api.social-api.ai/invite/'.$created['token'] : null,
+        ]);
+
+        if ($url === null) {
+            throw new RuntimeException('SocialAPI did not return a WhatsApp invite URL.');
+        }
+
+        return [
+            'auth_url' => $url,
+            'platform' => 'whatsapp',
+            'mode' => 'invite',
+            'message' => 'Open this SocialAPI invite to connect WhatsApp for this shop.',
+        ];
+    }
+
+    /**
+     * Pull remote SocialAPI accounts for this shop brand into local rows.
+     * Used after dashboard / invite connect when the webhook is slow or missed.
+     *
+     * @return list<SocialAccount>
+     */
+    public function importBrandAccounts(Business $business, ?string $platform = null): array
+    {
+        $brandId = $this->ensureBrand($business);
+        $platform = $platform !== null ? strtolower(trim($platform)) : null;
+        $saved = [];
+
+        foreach ($this->listAccountsForBrand($brandId) as $remote) {
+            if (! is_array($remote)) {
+                continue;
+            }
+            $rowPlatform = strtolower((string) ($remote['platform'] ?? ''));
+            if ($platform !== null && $platform !== '' && $rowPlatform !== $platform) {
+                continue;
+            }
+            if (empty($remote['brand_id'])) {
+                $remote['brand_id'] = $brandId;
+            }
+            try {
+                $saved[] = $this->upsertFromRemote($business, $remote);
+            } catch (\Throwable) {
+                // Skip foreign-brand / invalid rows
+            }
+        }
+
+        return $saved;
+    }
+
+    private function activeInviteUrl(string $brandId, string $platform): ?string
+    {
+        try {
+            $list = $this->client->get('/invites', ['brand_id' => $brandId]);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $rows = $list['data'] ?? [];
+        if (! is_array($rows)) {
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if (strtolower((string) ($row['platform'] ?? '')) !== strtolower($platform)) {
+                continue;
+            }
+            if (array_key_exists('is_active', $row) && ! $row['is_active']) {
+                continue;
+            }
+            $url = $this->firstNonEmptyString([
+                $row['url'] ?? null,
+                isset($row['token']) ? 'https://api.social-api.ai/invite/'.$row['token'] : null,
+            ]);
+            if ($url !== null) {
+                return $url;
+            }
+        }
+
+        return null;
     }
 
     /**

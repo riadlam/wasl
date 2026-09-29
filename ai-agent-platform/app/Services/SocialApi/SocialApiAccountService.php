@@ -68,18 +68,28 @@ class SocialApiAccountService
         string $code,
         string $state,
         string $wabaId,
-        string $phoneNumberId,
+        string $phoneNumberId = '',
+        bool $coexistence = false,
     ): SocialAccount {
         $this->ensureBrand($business);
+
+        $metadata = [
+            'state' => $state,
+            'waba_id' => $wabaId,
+        ];
+        $phoneNumberId = trim($phoneNumberId);
+        if ($phoneNumberId !== '') {
+            $metadata['phone_number_id'] = $phoneNumberId;
+        }
+        if ($coexistence) {
+            $metadata['coexistence'] = true;
+            $metadata['feature_type'] = 'whatsapp_business_app_onboarding';
+        }
 
         $result = $this->client->post('/oauth/exchange', [
             'platform' => 'whatsapp',
             'code' => $code,
-            'metadata' => [
-                'state' => $state,
-                'waba_id' => $wabaId,
-                'phone_number_id' => $phoneNumberId,
-            ],
+            'metadata' => $metadata,
         ]);
 
         if (isset($result['data']) && is_array($result['data']) && ! isset($result['account_id']) && ! isset($result['id'])) {

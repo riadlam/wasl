@@ -65,11 +65,8 @@ class SocialAccountController extends Controller
         }
 
         try {
-            // WhatsApp: SocialAPI-hosted invite (no Meta domain allowlist on Wasl).
-            // Embedded Signup stays available via /whatsapp/complete for allowlisted domains.
-            $result = $data['platform'] === 'whatsapp'
-                ? $this->accounts->whatsappInviteUrl($business)
-                : $this->accounts->connectUrl($business, $data['platform'], $request->user()->id);
+            // WhatsApp: return Meta Embedded Signup metadata (Coexistence for existing Business app numbers).
+            $result = $this->accounts->connectUrl($business, $data['platform'], $request->user()->id);
         } catch (Throwable $e) {
             report($e);
 
@@ -88,7 +85,7 @@ class SocialAccountController extends Controller
                 : null,
             'state' => is_string($result['state'] ?? null) ? $result['state'] : null,
             'platform' => $data['platform'],
-            'mode' => is_string($result['mode'] ?? null) ? $result['mode'] : null,
+            'mode' => $data['platform'] === 'whatsapp' ? 'embedded_coexistence' : null,
             'metadata' => $metadata,
             'message' => is_string($result['message'] ?? null) ? $result['message'] : null,
         ]);
@@ -147,7 +144,8 @@ class SocialAccountController extends Controller
             'code' => ['required', 'string'],
             'state' => ['required', 'string'],
             'waba_id' => ['required', 'string'],
-            'phone_number_id' => ['required', 'string'],
+            'phone_number_id' => ['nullable', 'string'],
+            'coexistence' => ['sometimes', 'boolean'],
         ]);
 
         $business = CurrentBusiness::require();
@@ -158,7 +156,8 @@ class SocialAccountController extends Controller
                 $data['code'],
                 $data['state'],
                 $data['waba_id'],
-                $data['phone_number_id'],
+                isset($data['phone_number_id']) ? (string) $data['phone_number_id'] : '',
+                (bool) ($data['coexistence'] ?? false),
             );
         } catch (Throwable $e) {
             report($e);

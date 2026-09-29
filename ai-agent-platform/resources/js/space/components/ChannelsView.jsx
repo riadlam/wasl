@@ -7,8 +7,9 @@ import { queryKeys } from '../query';
 import PageFrame from './PageFrame';
 import FinishConnectModal from './channels/FinishConnectModal';
 import DashboardConnectModal from './channels/DashboardConnectModal';
-import WhatsAppInviteModal from './channels/WhatsAppInviteModal';
+import WhatsAppConnectModal from './channels/WhatsAppConnectModal';
 import { SOCIALAPI_PLATFORMS, platformMeta } from './channels/platforms';
+import { launchWhatsAppEmbeddedSignup } from './channels/whatsappEmbeddedSignup';
 
 const statusTone = {
     connected: 'bg-teal/10 text-teal-dark',
@@ -59,8 +60,7 @@ export default function ChannelsView() {
     const [pendingConnectionId, setPendingConnectionId] = useState('');
     const [dashHelpOpen, setDashHelpOpen] = useState(false);
     const [dashPlatform, setDashPlatform] = useState('telegram');
-    const [waInviteOpen, setWaInviteOpen] = useState(false);
-    const [waInviteUrl, setWaInviteUrl] = useState('');
+    const [waHelpOpen, setWaHelpOpen] = useState(false);
     const [showMore, setShowMore] = useState(false);
 
     const params = new URLSearchParams(window.location.search);
@@ -157,24 +157,19 @@ export default function ChannelsView() {
             return;
         }
 
+        if (platform === 'whatsapp' || meta.mode === 'invite') {
+            setWaHelpOpen(true);
+            return;
+        }
+
         setBusy(platform);
         setError('');
         try {
             const { data } = await api.post('/social-accounts/connect', { platform });
-
-            // WhatsApp: SocialAPI-hosted invite (no Wasl Meta domain allowlist needed).
-            if (platform === 'whatsapp' && data.auth_url) {
-                setWaInviteUrl(data.auth_url);
-                window.open(data.auth_url, '_blank', 'noopener,noreferrer');
-                setWaInviteOpen(true);
-                return;
-            }
-
             if (data.auth_url) {
                 window.location.assign(data.auth_url);
                 return;
             }
-
             setError('Could not start connect for this platform. Try again.');
         } catch (err) {
             setError(apiErrorMessage(err, 'Could not start connect.'));
@@ -183,21 +178,32 @@ export default function ChannelsView() {
         }
     };
 
-    const finishWhatsAppInvite = async () => {
+    const startWhatsAppCoexistence = async () => {
         if (!can('settings.manage') || busy) return;
-        setBusy('wa-import');
+        setBusy('whatsapp');
         setError('');
         try {
-            const { data } = await api.post('/social-accounts/import', { platform: 'whatsapp' });
-            if ((data.count || 0) > 0) {
-                setWaInviteOpen(false);
-                await afterChannelsConnected('WhatsApp connected for this shop.');
+            const { data } = await api.post('/social-accounts/connect', { platform: 'whatsapp' });
+            if (!data.state || !data.metadata?.app_id || !data.metadata?.config_id) {
+                setError('WhatsApp connect is not configured yet. Contact Wasl support.');
                 return;
             }
-            setBanner('WhatsApp is not on SocialAPI for this shop yet. Finish the invite tab, then try again.');
-            setBannerKind('warn');
+
+            const embedded = await launchWhatsAppEmbeddedSignup(data.metadata);
+            await api.post('/social-accounts/whatsapp/complete', {
+                code: embedded.code,
+                state: data.state,
+                waba_id: embedded.waba_id,
+                phone_number_id: embedded.phone_number_id || undefined,
+                coexistence: embedded.coexistence || true,
+            });
+            setWaHelpOpen(false);
+            await afterChannelsConnected('WhatsApp connected for this shop.');
         } catch (err) {
-            setError(apiErrorMessage(err, 'Could not import WhatsApp yet.'));
+            const message = err?.message && !err?.response
+                ? err.message
+                : apiErrorMessage(err, 'Could not connect WhatsApp.');
+            setError(message);
         } finally {
             setBusy('');
         }
@@ -563,12 +569,11 @@ export default function ChannelsView() {
                 onClose={() => setDashHelpOpen(false)}
             />
 
-            <WhatsAppInviteModal
-                open={waInviteOpen}
-                inviteUrl={waInviteUrl}
-                busy={busy === 'wa-import'}
-                onClose={() => setWaInviteOpen(false)}
-                onRefresh={finishWhatsAppInvite}
+            <WhatsAppConnectModal
+                open={waHelpOpen}
+                busy={busy === 'whatsapp'}
+                onClose={() => setWaHelpOpen(false)}
+                onStart={startWhatsAppCoexistence}
             />
         </PageFrame>
     );

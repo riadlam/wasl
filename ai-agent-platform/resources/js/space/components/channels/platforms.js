@@ -17,7 +17,7 @@ import { SiThreads } from 'react-icons/si';
 /**
  * Channel platforms available in Wasl.
  * oauth = connect returns auth_url to redirect.
- * invite = SocialAPI-hosted connect link (WhatsApp — no Wasl domain allowlist).
+ * invite = WhatsApp Coexistence Embedded Signup (existing Business app number).
  * dashboard = guided connect (credentials / SocialAPI dashboard).
  */
 export const SOCIALAPI_PLATFORMS = [
@@ -42,7 +42,7 @@ export const SOCIALAPI_PLATFORMS = [
     {
         id: 'whatsapp',
         label: 'WhatsApp',
-        blurb: 'Business DMs via SocialAPI invite signup.',
+        blurb: 'Keep your WhatsApp Business number (Coexistence).',
         group: 'inbox',
         mode: 'invite',
         Icon: FaWhatsapp,

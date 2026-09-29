@@ -148,7 +148,12 @@ class CampaignLaunchReadinessTest extends TestCase
             $this->assertMatchesRegularExpression('/^wasl-slot-\d+-(facebook|instagram)-ok$/', $key);
         }
 
-        $stories = array_filter($this->createPostArgs, fn ($a) => ($a['post_type'] ?? null) === 'story');
+        $stories = array_filter($this->createPostArgs, function ($a) {
+            $type = $a['post_type'] ?? null;
+            $targetType = $a['targets'][0]['platform_data']['content_type'] ?? null;
+
+            return $type === 'story' || $targetType === 'stories' || $targetType === 'story';
+        });
         $this->assertCount(2, $stories);
         foreach ($this->createPostArgs as $args) {
             $this->assertSame(['med_1'], $args['media_ids']);

@@ -256,20 +256,20 @@ class CampaignMcpGateway
             return $args;
         }
 
-        // No live schema / no story enum: set top-level post_type AND per-target
-        // platform_data so Facebook/Instagram stories land correctly on SocialAPI.
-        $args['post_type'] = 'story';
+        // Live SocialAPI (FB/IG): stories are opted in with platform_data.content_type = "stories"
+        // on each target (plural). Captions are ignored by the platforms.
+        // See docs.social-api.ai/posts/facebook.md and posts/instagram.md.
         if (isset($args['targets']) && is_array($args['targets'])) {
             foreach ($args['targets'] as $i => $target) {
                 $args['targets'][$i]['platform_data'] = array_merge(
                     is_array($target['platform_data'] ?? null) ? $target['platform_data'] : [],
-                    ['content_type' => 'story', 'post_type' => 'story'],
+                    ['content_type' => 'stories'],
                 );
             }
         } else {
             $args['platform_data'] = array_merge(
                 is_array($args['platform_data'] ?? null) ? $args['platform_data'] : [],
-                ['content_type' => 'story', 'post_type' => 'story'],
+                ['content_type' => 'stories'],
             );
         }
 

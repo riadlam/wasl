@@ -36,7 +36,7 @@ class CampaignMcpStoryScheduleTest extends TestCase
         $gateway->schedulePost(['acc_1'], 'Story caption', now()->toIso8601String(), [], true);
     }
 
-    public function test_story_sets_post_type_and_platform_data_when_schema_unknown(): void
+    public function test_story_sets_content_type_stories_on_targets(): void
     {
         config([
             'services.socialapi.mcp_enabled' => true,
@@ -72,13 +72,12 @@ class CampaignMcpStoryScheduleTest extends TestCase
         );
 
         $this->assertSame(['acc_ig' => 'post_story_1'], $ids);
-        $this->assertSame('story', $captured['post_type'] ?? null);
-        $this->assertSame('story', $captured['targets'][0]['platform_data']['post_type'] ?? null);
-        $this->assertSame('story', $captured['targets'][0]['platform_data']['content_type'] ?? null);
+        $this->assertSame('stories', $captured['targets'][0]['platform_data']['content_type'] ?? null);
         $this->assertSame('acc_ig', $captured['targets'][0]['account_id'] ?? null);
+        $this->assertArrayHasKey('media', $captured);
     }
 
-    public function test_story_uses_live_schema_post_type_enum(): void
+    public function test_story_uses_live_socialapi_targets_schema(): void
     {
         config([
             'services.socialapi.mcp_enabled' => true,
@@ -96,10 +95,27 @@ class CampaignMcpStoryScheduleTest extends TestCase
                     'properties' => [
                         'text' => ['type' => 'string'],
                         'scheduled_at' => ['type' => 'string'],
-                        'account_ids' => ['type' => 'array', 'items' => ['type' => 'string']],
-                        'media_ids' => ['type' => 'array', 'items' => ['type' => 'string']],
-                        'idempotency_key' => ['type' => 'string'],
-                        'post_type' => ['type' => 'string', 'enum' => ['feed', 'story', 'reel']],
+                        'targets' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'account_id' => ['type' => 'string'],
+                                    'platform_data' => ['type' => 'object', 'additionalProperties' => true],
+                                ],
+                            ],
+                        ],
+                        'media' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'source_type' => ['type' => 'string'],
+                                    'source' => ['type' => 'string'],
+                                ],
+                            ],
+                        ],
+                        'platform_data' => ['type' => 'object', 'additionalProperties' => true],
                     ],
                 ],
             ],
@@ -128,8 +144,11 @@ class CampaignMcpStoryScheduleTest extends TestCase
             'key-fb',
         );
 
-        $this->assertSame('story', $captured['post_type'] ?? null);
-        $this->assertSame(['med_2'], $captured['media_ids'] ?? null);
-        $this->assertSame(['acc_fb'], $captured['account_ids'] ?? null);
+        $this->assertSame('stories', $captured['targets'][0]['platform_data']['content_type'] ?? null);
+        $this->assertSame('acc_fb', $captured['targets'][0]['account_id'] ?? null);
+        $this->assertSame(
+            [['source_type' => 'media_id', 'source' => 'med_2']],
+            $captured['media'] ?? null,
+        );
     }
 }

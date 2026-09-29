@@ -8,6 +8,7 @@ import PageFrame from './PageFrame';
 import FinishConnectModal from './channels/FinishConnectModal';
 import DashboardConnectModal from './channels/DashboardConnectModal';
 import { SOCIALAPI_PLATFORMS, platformMeta } from './channels/platforms';
+import { launchWhatsAppEmbeddedSignup } from './channels/whatsappEmbeddedSignup';
 
 const statusTone = {
     connected: 'bg-teal/10 text-teal-dark',
@@ -57,7 +58,7 @@ export default function ChannelsView() {
     const [selectOpen, setSelectOpen] = useState(false);
     const [pendingConnectionId, setPendingConnectionId] = useState('');
     const [dashHelpOpen, setDashHelpOpen] = useState(false);
-    const [dashPlatform, setDashPlatform] = useState('whatsapp');
+    const [dashPlatform, setDashPlatform] = useState('telegram');
     const [showMore, setShowMore] = useState(false);
 
     const params = new URLSearchParams(window.location.search);
@@ -148,7 +149,7 @@ export default function ChannelsView() {
         if (!can('settings.manage') || busy) return;
         const meta = platformMeta(platform);
 
-        if (meta.mode === 'embedded' || meta.mode === 'dashboard') {
+        if (meta.mode === 'dashboard') {
             setDashPlatform(platform);
             setDashHelpOpen(true);
             return;
@@ -158,18 +159,35 @@ export default function ChannelsView() {
         setError('');
         try {
             const { data } = await api.post('/social-accounts/connect', { platform });
+
+            if (meta.mode === 'embedded' || (data.metadata?.config_id && !data.auth_url)) {
+                if (!data.state || !data.metadata?.app_id || !data.metadata?.config_id) {
+                    setError('WhatsApp connect is not configured yet. Contact Wasl support.');
+                    return;
+                }
+
+                const embedded = await launchWhatsAppEmbeddedSignup(data.metadata);
+                await api.post('/social-accounts/whatsapp/complete', {
+                    code: embedded.code,
+                    state: data.state,
+                    waba_id: embedded.waba_id,
+                    phone_number_id: embedded.phone_number_id,
+                });
+                await afterChannelsConnected('WhatsApp connected for this shop.');
+                return;
+            }
+
             if (data.auth_url) {
                 window.location.assign(data.auth_url);
                 return;
             }
-            if (data.metadata && !data.auth_url) {
-                setDashPlatform(platform);
-                setDashHelpOpen(true);
-                return;
-            }
+
             setError('Could not start connect for this platform. Try again.');
         } catch (err) {
-            setError(apiErrorMessage(err, 'Could not start connect.'));
+            const message = err?.message && !err?.response
+                ? err.message
+                : apiErrorMessage(err, 'Could not start connect.');
+            setError(message);
         } finally {
             setBusy('');
         }

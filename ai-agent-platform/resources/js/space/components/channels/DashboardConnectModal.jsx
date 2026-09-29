@@ -1,10 +1,9 @@
 import Modal from '../modals/Modal';
 import { platformMeta } from './platforms';
 
-export default function DashboardConnectModal({ open, platformId = 'whatsapp', onClose }) {
+export default function DashboardConnectModal({ open, platformId = 'telegram', onClose }) {
     const meta = platformMeta(platformId);
     const Icon = meta.Icon;
-    const isWhatsApp = platformId === 'whatsapp';
 
     return (
         <Modal open={open} title={`Connect ${meta.label}`} onClose={onClose} wide>
@@ -16,21 +15,28 @@ export default function DashboardConnectModal({ open, platformId = 'whatsapp', o
                     <Icon size={26} />
                 </div>
                 <p className="text-sm leading-relaxed text-muted">
-                    {isWhatsApp
-                        ? 'WhatsApp uses Meta Embedded Signup. Channels stay private to this shop — we never import another shop’s accounts.'
-                        : `${meta.label} connects for this shop only. Use Connect on the Channels page when in-app authorize is available.`}
+                    {meta.label} connects with credentials for this shop only
+                    (bot token / app password). In-app authorize is not available yet —
+                    use the SocialAPI dashboard for this channel, then refresh Channels.
                 </p>
                 <ol className="list-decimal space-y-2 ps-5 text-sm text-ink">
+                    <li>Keep this shop selected in Wasl (channels never sync from other shops).</li>
                     <li>
-                        Keep this shop selected in Wasl (channels never sync from other shops).
-                    </li>
-                    <li>
-                        Complete the connect steps when prompted, then return here — the account is stored for this shop only.
+                        Open SocialAPI, connect {meta.label} to this shop&apos;s brand, then return
+                        here and refresh.
                     </li>
                 </ol>
                 <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
-                    <button type="button" onClick={onClose} className="rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white">
-                        Got it
+                    <a
+                        href="https://dashboard.social-api.ai"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white"
+                    >
+                        Open SocialAPI
+                    </a>
+                    <button type="button" onClick={onClose} className="rounded-xl border border-line px-4 py-2 text-sm font-semibold text-ink">
+                        Close
                     </button>
                 </div>
             </div>

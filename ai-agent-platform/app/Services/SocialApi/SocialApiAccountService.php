@@ -54,6 +54,55 @@ class SocialApiAccountService
     }
 
     /**
+     * Finish WhatsApp Meta Embedded Signup (SocialAPI proxy OAuth exchange).
+     *
+     * @see https://docs.social-api.ai/connectors/whatsapp
+     *
+     * @throws RuntimeException
+     */
+    public function completeWhatsAppEmbedded(
+        Business $business,
+        string $code,
+        string $state,
+        string $wabaId,
+        string $phoneNumberId,
+    ): SocialAccount {
+        $this->ensureBrand($business);
+
+        $result = $this->client->post('/oauth/exchange', [
+            'platform' => 'whatsapp',
+            'code' => $code,
+            'metadata' => [
+                'state' => $state,
+                'waba_id' => $wabaId,
+                'phone_number_id' => $phoneNumberId,
+            ],
+        ]);
+
+        if (isset($result['data']) && is_array($result['data']) && ! isset($result['account_id']) && ! isset($result['id'])) {
+            $result = array_merge($result, $result['data']);
+        }
+
+        $accountId = $this->firstNonEmptyString([
+            $result['account_id'] ?? null,
+            $result['id'] ?? null,
+        ]);
+
+        if ($accountId === null) {
+            throw new RuntimeException('SocialAPI WhatsApp exchange did not return an account id.');
+        }
+
+        $remote = array_merge($result, [
+            'id' => $accountId,
+            'account_id' => $accountId,
+            'brand_id' => $business->socialapi_brand_id,
+            'platform' => 'whatsapp',
+        ]);
+
+        return $this->upsertFromRemote($business, $remote);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function postConnect(Business $business, string $platform, int $userId, string $brandId): array

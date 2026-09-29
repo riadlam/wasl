@@ -17,8 +17,8 @@ import { SiThreads } from 'react-icons/si';
 /**
  * Channel platforms available in Wasl.
  * oauth = connect returns auth_url to redirect.
- * embedded = WhatsApp Meta Embedded Signup.
- * dashboard = guided connect flow.
+ * embedded = WhatsApp Meta Embedded Signup (SDK popup + oauth/exchange).
+ * dashboard = guided connect (credentials / SocialAPI dashboard).
  */
 export const SOCIALAPI_PLATFORMS = [
     {

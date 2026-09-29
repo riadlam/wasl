@@ -74,10 +74,59 @@ class SocialAccountController extends Controller
             ], 422);
         }
 
+        $metadata = isset($result['metadata']) && is_array($result['metadata'])
+            ? $this->publicConnectMetadata($result['metadata'])
+            : null;
+
         return response()->json([
-            'auth_url' => is_string($result['auth_url'] ?? null) ? $result['auth_url'] : null,
+            'auth_url' => is_string($result['auth_url'] ?? null) && $result['auth_url'] !== ''
+                ? $result['auth_url']
+                : null,
             'state' => is_string($result['state'] ?? null) ? $result['state'] : null,
             'platform' => $data['platform'],
+            'metadata' => $metadata,
+            'message' => is_string($result['message'] ?? null) ? $result['message'] : null,
+        ]);
+    }
+
+    /**
+     * Complete WhatsApp Embedded Signup after Meta popup returns code + WABA ids.
+     */
+    public function completeWhatsApp(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string'],
+            'state' => ['required', 'string'],
+            'waba_id' => ['required', 'string'],
+            'phone_number_id' => ['required', 'string'],
+        ]);
+
+        $business = CurrentBusiness::require();
+
+        try {
+            $saved = $this->accounts->completeWhatsAppEmbedded(
+                $business,
+                $data['code'],
+                $data['state'],
+                $data['waba_id'],
+                $data['phone_number_id'],
+            );
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => 'Could not finish WhatsApp connect. Try again or contact Wasl support.',
+            ], 422);
+        }
+
+        $this->onboarding->onChannelConnected($business, $saved);
+        $this->onboarding->ensureProfilesForAccounts($business, [$saved]);
+
+        $saved->loadMissing('logoAsset');
+
+        return response()->json([
+            'account' => $saved->toChannelApiArray(),
+            'ok' => true,
         ]);
     }
 
@@ -406,5 +455,26 @@ class SocialAccountController extends Controller
             ->where('platform', 'facebook')
             ->where('status', '!=', 'disconnected')
             ->exists();
+    }
+
+    /**
+     * Only expose Meta Embedded Signup fields the browser needs (never secrets).
+     *
+     * @param  array<string, mixed>  $metadata
+     * @return array{app_id?: string, config_id?: string, solution_id?: string}
+     */
+    private function publicConnectMetadata(array $metadata): array
+    {
+        $out = [];
+        foreach (['app_id', 'config_id', 'solution_id'] as $key) {
+            if (isset($metadata[$key]) && (is_string($metadata[$key]) || is_numeric($metadata[$key]))) {
+                $value = trim((string) $metadata[$key]);
+                if ($value !== '') {
+                    $out[$key] = $value;
+                }
+            }
+        }
+
+        return $out;
     }
 }

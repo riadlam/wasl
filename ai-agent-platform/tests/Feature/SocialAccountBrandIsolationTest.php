@@ -332,4 +332,90 @@ class SocialAccountBrandIsolationTest extends TestCase
         $this->assertArrayNotHasKey('provider', $shopA);
         $this->assertTrue(($shopA['connected'] ?? false) === true);
     }
+
+    public function test_whatsapp_connect_returns_embedded_signup_metadata(): void
+    {
+        ['owner' => $owner, 'business' => $business] = $this->makeShop();
+        $business->update(['socialapi_brand_id' => 'brand_wa']);
+
+        config(['services.socialapi.key' => 'sapi_key_test']);
+
+        Http::fake([
+            'https://api.social-api.ai/v1/brands' => Http::response([
+                'data' => [['id' => 'brand_wa', 'name' => 'Maison Test']],
+                'count' => 1,
+            ], 200),
+            'https://api.social-api.ai/v1/accounts/connect' => Http::response([
+                'auth_url' => '',
+                'state' => 'wa_csrf_state',
+                'message' => 'Open this link to connect your whatsapp account.',
+                'metadata' => [
+                    'app_id' => '830175536100467',
+                    'config_id' => '948983521469059',
+                    'solution_id' => '',
+                    'secret' => 'should-not-leak',
+                ],
+            ], 202),
+        ]);
+
+        $this->asShopUser($owner, $business)
+            ->postJson('/api/social-accounts/connect', ['platform' => 'whatsapp'])
+            ->assertOk()
+            ->assertJsonPath('auth_url', null)
+            ->assertJsonPath('state', 'wa_csrf_state')
+            ->assertJsonPath('metadata.app_id', '830175536100467')
+            ->assertJsonPath('metadata.config_id', '948983521469059')
+            ->assertJsonMissingPath('metadata.secret');
+    }
+
+    public function test_whatsapp_complete_exchanges_code_and_saves_account(): void
+    {
+        ['owner' => $owner, 'business' => $business] = $this->makeShop();
+        $business->update([
+            'socialapi_brand_id' => 'brand_wa',
+            'onboarding_status' => \App\Models\Business::ONBOARDING_DONE,
+        ]);
+
+        config(['services.socialapi.key' => 'sapi_key_test']);
+        \Illuminate\Support\Facades\Bus::fake();
+
+        Http::fake([
+            'https://api.social-api.ai/v1/oauth/exchange' => Http::response([
+                'account_id' => 'acc_wa_1',
+                'platform' => 'whatsapp',
+                'display_name' => 'Wasl WA',
+                'username' => '+213555000000',
+            ], 201),
+        ]);
+        Http::preventStrayRequests();
+
+        $this->asShopUser($owner, $business)
+            ->postJson('/api/social-accounts/whatsapp/complete', [
+                'code' => 'AQD_test_code',
+                'state' => 'wa_csrf_state',
+                'waba_id' => 'waba_123',
+                'phone_number_id' => 'phone_456',
+            ])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('account.platform', 'whatsapp')
+            ->assertJsonPath('account.name', 'Wasl WA');
+
+        $this->assertDatabaseHas('social_accounts', [
+            'business_id' => $business->id,
+            'socialapi_account_id' => 'acc_wa_1',
+            'platform' => 'whatsapp',
+            'status' => 'connected',
+        ]);
+
+        Http::assertSent(function ($request) {
+            return $request->method() === 'POST'
+                && str_ends_with($request->url(), '/oauth/exchange')
+                && ($request['platform'] ?? null) === 'whatsapp'
+                && ($request['code'] ?? null) === 'AQD_test_code'
+                && ($request['metadata']['state'] ?? null) === 'wa_csrf_state'
+                && ($request['metadata']['waba_id'] ?? null) === 'waba_123'
+                && ($request['metadata']['phone_number_id'] ?? null) === 'phone_456';
+        });
+    }
 }

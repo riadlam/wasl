@@ -19,4 +19,6 @@ return [
     'image_max_cost_usd' => 1.0,
     /** Minimum DA when a positive USD cost rounds to 0. */
     'min_charge_da' => 0.01,
+    /** Auto-credit new owner wallets on register (DA). */
+    'signup_bonus_da' => 500,
 ];

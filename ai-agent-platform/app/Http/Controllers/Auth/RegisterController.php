@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\ShopProvisioner;
+use App\Services\Wallet\WalletService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,7 +18,7 @@ class RegisterController extends Controller
         return view('auth.register');
     }
 
-    public function store(Request $request, ShopProvisioner $provisioner): RedirectResponse
+    public function store(Request $request, ShopProvisioner $provisioner, WalletService $wallets): RedirectResponse
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
@@ -35,6 +36,19 @@ class RegisterController extends Controller
         ]);
 
         $business = $provisioner->createShop($user, $data['shop_name']);
+
+        $bonus = (float) config('billing.signup_bonus_da', 500);
+        if ($bonus > 0) {
+            $wallets->credit(
+                $user,
+                $bonus,
+                'signup_bonus',
+                $business,
+                $user,
+                null,
+                ['source' => 'register'],
+            );
+        }
 
         Auth::login($user);
         $request->session()->regenerate();

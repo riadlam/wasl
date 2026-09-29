@@ -34,5 +34,14 @@ class AuthTest extends TestCase
         $this->assertDatabaseHas('users', ['email' => 'nadir@example.test']);
         $this->assertDatabaseHas('businesses', ['name' => 'Boutique Nadir']);
         $this->assertDatabaseHas('business_users', ['role' => 'owner']);
+
+        $user = \App\Models\User::query()->where('email', 'nadir@example.test')->firstOrFail();
+        $this->assertSame(500.0, (float) $user->wallet_balance_da);
+        $this->assertDatabaseHas('wallet_ledger', [
+            'user_id' => $user->id,
+            'direction' => 'credit',
+            'amount_da' => 500,
+            'reason' => 'signup_bonus',
+        ]);
     }
 }

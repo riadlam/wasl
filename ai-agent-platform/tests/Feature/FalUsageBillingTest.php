@@ -39,7 +39,10 @@ class FalUsageBillingTest extends TestCase
         $charge = AiTaskCharge::query()->latest('id')->first();
         $this->assertSame(0.012, (float) $charge->cost_usd);
         $this->assertSame(3.0, (float) $charge->cost_da);
-        $this->assertSame('fal_usage_cost', $charge->meta['billed_from'] ?? null);
+        $this->assertContains($charge->meta['billed_from'] ?? null, [
+            'fal_usage_cost',
+            'fal_usage_cost_partial',
+        ]);
     }
 
     public function test_chat_falls_back_to_catalog_when_fal_omits_cost(): void

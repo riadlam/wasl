@@ -417,7 +417,7 @@ async def knowledge_ingest(body: KnowledgeIngestRequest) -> KnowledgeIngestRespo
     with tracer.start_as_current_span("knowledge.ingest") as span:
         span.set_attribute("business_id", body.business_id)
         span.set_attribute("namespace", body.namespace)
-        count = await knowledge.upsert_document(
+        count, usage = await knowledge.upsert_document(
             business_id=body.business_id,
             namespace=body.namespace,
             source_type=body.source_type,
@@ -433,6 +433,7 @@ async def knowledge_ingest(body: KnowledgeIngestRequest) -> KnowledgeIngestRespo
             business_id=body.business_id,
             source_type=body.source_type,
             source_id=body.source_id,
+            usage=usage,
         )
 
 
@@ -482,13 +483,27 @@ async def approval_resume(
 
 @app.post("/v1/memory/remember", dependencies=[Depends(require_service_key)])
 async def memory_remember(body: RememberRequest, tenant: dict = Depends(tenant_headers)) -> dict:
-    ok = await long_term.remember(
+    result = await long_term.remember(
         business_id=tenant["business_id"],
         key=body.key,
         content=body.content,
         metadata=body.metadata,
     )
-    return {"ok": ok, "business_id": tenant["business_id"], "key": body.key}
+    if isinstance(result, dict):
+        return {
+            "ok": bool(result.get("ok")),
+            "business_id": tenant["business_id"],
+            "key": body.key,
+            "usage": result.get("usage")
+            or {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": 0.0,
+                "fal_calls": 0,
+                "calls_with_cost": 0,
+            },
+        }
+    return {"ok": bool(result), "business_id": tenant["business_id"], "key": body.key}
 
 
 @app.post(

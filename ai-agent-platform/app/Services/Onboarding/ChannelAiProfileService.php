@@ -5,11 +5,13 @@ namespace App\Services\Onboarding;
 use App\AI\Prompts\ChannelAiProfilePrompt;
 use App\AI\Providers\FalLlmProvider;
 use App\Models\AiProfilePerChannel;
+use App\Models\AiTaskCharge;
 use App\Models\Business;
 use App\Models\BusinessTrainingSnapshot;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\SocialAccount;
+use App\Services\Wallet\AiTaskBillingService;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -37,6 +39,7 @@ class ChannelAiProfileService
         private FalLlmProvider $llm,
         private ChannelAiProfilePrompt $prompt,
         private \App\AI\Runtime\SkAgentClient $skClient,
+        private AiTaskBillingService $billing,
     ) {}
 
     public function buildForBusiness(Business $business): void
@@ -80,11 +83,21 @@ class ChannelAiProfileService
         $corpus = $this->corpusForAccount($business, $account);
         unset($corpus['images']); // identity agent is text+RAG; images not required for vector store
 
+        $modelKey = (string) config('services.fal.model', 'google/gemini-2.5-flash');
+        try {
+            app(\App\Services\Wallet\WalletService::class)->authorizeBusinessAi(
+                $business,
+                $this->billing->chatAuthorizeDa($modelKey),
+            );
+        } catch (\App\Exceptions\InsufficientWalletException|\App\Exceptions\WalletOwnerMissingException $e) {
+            throw new RuntimeException('Insufficient wallet balance to train AI identity: '.$e->getMessage(), 0, $e);
+        }
+
         $result = $this->skClient->buildIdentity(
             $business,
             (int) $account->id,
             $corpus,
-            (string) config('services.fal.model', 'google/gemini-2.5-flash'),
+            $modelKey,
         );
 
         if (empty($result['ok'])) {
@@ -96,6 +109,26 @@ class ChannelAiProfileService
         $chunks = (int) ($result['chunks_upserted'] ?? 0);
         if ($chunks < 1 && empty($result['summary'])) {
             throw new RuntimeException('BusinessIdentityAgent produced no identity chunks in Supabase.');
+        }
+
+        $usage = is_array($result['usage'] ?? null) ? $result['usage'] : [];
+        try {
+            $this->billing->chargeAiUsage(
+                $business,
+                null,
+                AiTaskCharge::TYPE_AGENT_TRAINING,
+                $modelKey,
+                $usage,
+                AiProfilePerChannel::class,
+                null,
+                [
+                    'surface' => 'identity_train',
+                    'social_account_id' => $account->id,
+                    'chunks_upserted' => $chunks,
+                ],
+            );
+        } catch (\Throwable $e) {
+            report($e);
         }
 
         $counts = $corpus['counts'] ?? [];

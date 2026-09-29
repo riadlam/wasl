@@ -11,14 +11,20 @@ use App\AI\Runtime\AiRuntime;
 use App\AI\Runtime\SkAgentClient;
 use App\AI\Rules\AgentRuleEngine;
 use App\AI\LlmModels\LlmModelCatalog;
+use App\Exceptions\InsufficientWalletException;
+use App\Exceptions\WalletOwnerMissingException;
 use App\Mcp\McpContext;
 use App\Models\CustomerAiSetting;
 use App\Models\AgentRun;
 use App\Models\AgentToolCall;
 use App\Models\AiProfilePerChannel;
+use App\Models\AiTaskCharge;
+use App\Models\Business;
 use App\Models\Message;
 use App\Services\ConversationService;
 use App\Services\CustomerService;
+use App\Services\Wallet\AiTaskBillingService;
+use App\Services\Wallet\WalletService;
 use App\Services\WorkflowService;
 use Throwable;
 
@@ -36,6 +42,8 @@ class BusinessAgent
         private SkAgentClient $skClient,
         private CustomerApprover $customerApprover,
         private CustomerService $customers,
+        private WalletService $wallets,
+        private AiTaskBillingService $billing,
     ) {}
 
     public function run(Message $inbound): AgentRun
@@ -48,6 +56,7 @@ class BusinessAgent
         $allowReply = $this->shouldReply($inbound, $conversation, $agent);
         $leadWorkflows = $this->workflows->promptLines($business);
         $classify = $leadWorkflows !== [];
+        $modelKey = $this->customerModelKey($customerAi);
 
         $run = AgentRun::query()->create([
             'business_id' => $business->id,
@@ -60,6 +69,7 @@ class BusinessAgent
             'metadata' => [
                 'allow_reply' => $allowReply,
                 'classify' => $classify,
+                'model_key' => $modelKey,
             ],
         ]);
 
@@ -120,6 +130,32 @@ class BusinessAgent
         }
 
         $surface = $inbound->type === 'comment' ? 'comment' : 'dm';
+        try {
+            $this->wallets->authorizeBusinessAi($business, $this->billing->chatAuthorizeDa($modelKey));
+        } catch (InsufficientWalletException|WalletOwnerMissingException $e) {
+            $run->update([
+                'status' => 'skipped_wallet',
+                'completed_at' => now(),
+                'error' => $e->getMessage(),
+                'metadata' => [
+                    'allow_reply' => $allowReply,
+                    'classify' => $classify,
+                    'surface' => $surface,
+                    'wallet' => 'insufficient',
+                ],
+            ]);
+            try {
+                app(\App\Services\Telegram\TelegramMerchantNotifier::class)->aiNeedsHuman(
+                    $business,
+                    $conversation,
+                    'Insufficient wallet balance — AI replies paused until top-up.',
+                );
+            } catch (\Throwable) {
+            }
+
+            return $run->fresh('toolCalls');
+        }
+
         $parentPostContext = null;
         if ($surface === 'comment') {
             $resolved = app(\App\Services\Comments\CommentPostContextResolver::class)
@@ -142,7 +178,7 @@ class BusinessAgent
         );
 
         if (AiRuntime::usesSk($business)) {
-            return $this->runViaSk($run, $inbound, $conversation, $business, $system, $allowReply, $replyLanguage);
+            return $this->runViaSk($run, $inbound, $conversation, $business, $system, $allowReply, $replyLanguage, $surface, $modelKey);
         }
 
         $messages = array_merge(
@@ -161,6 +197,13 @@ class BusinessAgent
         $inputTokens = 0;
         $outputTokens = 0;
         $handedOff = false;
+        $usageBag = [
+            'prompt_tokens' => 0,
+            'completion_tokens' => 0,
+            'cost_usd' => 0.0,
+            'fal_calls' => 0,
+            'calls_with_cost' => 0,
+        ];
         $groundingSources = [(string) $inbound->text];
         $profile = $this->channelProfile($conversation->social_account_id);
         if ($profile) {
@@ -200,6 +243,7 @@ class BusinessAgent
 
         try {
             $loop = $this->loop->run($business, $messages, $tools, $context, $llmOptions, $afterTool);
+            $usageBag = $this->billing->mergeUsage($usageBag, $loop->usage);
             $inputTokens = (int) $loop->usage['prompt_tokens'];
             $outputTokens = (int) $loop->usage['completion_tokens'];
             $messages = $loop->messages;
@@ -208,6 +252,8 @@ class BusinessAgent
                 : $loop->text;
         } catch (Throwable $e) {
             $usage = $e instanceof AgentLoopException ? $e->usage : [];
+            $usageBag = $this->billing->mergeUsage($usageBag, $usage);
+            $this->settleInboxCharge($business, $run, $surface, $modelKey, $usageBag);
             $run->update([
                 'status' => 'failed',
                 'completed_at' => now(),
@@ -234,10 +280,11 @@ class BusinessAgent
             $finalText = $guard->ensure(
                 $finalText,
                 $groundingSources,
-                function () use ($messages, $finalText, $replyLanguage, $llmOptions): string {
+                function () use ($messages, $finalText, $replyLanguage, $llmOptions, &$usageBag): string {
                     $messages[] = ['role' => 'assistant', 'content' => $finalText];
                     $messages[] = ['role' => 'user', 'content' => 'Rewrite the last reply in '.ReplyLanguage::normalize($replyLanguage).' without any number that was not in the shop data or the customer message.'];
                     $response = $this->llm->chat($messages, [], $llmOptions);
+                    $usageBag = $this->billing->mergeUsage($usageBag, $this->usageFromFalChat($response));
                     $content = $response['choices'][0]['message']['content'] ?? '';
 
                     return is_string($content) ? $content : '';
@@ -249,7 +296,7 @@ class BusinessAgent
                 $finalText,
                 (string) $inbound->text,
                 $groundingSources,
-                function (string $feedback, string $previous) use ($messages, $replyLanguage, $llmOptions): array {
+                function (string $feedback, string $previous) use ($messages, $replyLanguage, $llmOptions, &$usageBag): array {
                     $msgs = $messages;
                     $msgs[] = ['role' => 'assistant', 'content' => $previous];
                     $msgs[] = [
@@ -259,6 +306,7 @@ class BusinessAgent
                             .' with no invented prices/stock. Reply text only.',
                     ];
                     $response = $this->llm->chat($msgs, [], $llmOptions);
+                    $usageBag = $this->billing->mergeUsage($usageBag, $this->usageFromFalChat($response));
                     $content = $response['choices'][0]['message']['content'] ?? '';
                     $usage = $response['usage'] ?? [];
 
@@ -290,11 +338,19 @@ class BusinessAgent
             ]);
             $inputTokens += (int) ($approved['usage']['prompt_tokens'] ?? 0);
             $outputTokens += (int) ($approved['usage']['completion_tokens'] ?? 0);
+            $usageBag = $this->billing->mergeUsage($usageBag, [
+                'prompt_tokens' => (int) ($approved['usage']['prompt_tokens'] ?? 0),
+                'completion_tokens' => (int) ($approved['usage']['completion_tokens'] ?? 0),
+                'cost_usd' => (float) ($approved['usage']['cost_usd'] ?? 0),
+                'fal_calls' => (int) ($approved['usage']['fal_calls'] ?? 0),
+                'calls_with_cost' => (int) ($approved['usage']['calls_with_cost'] ?? 0),
+            ]);
 
             $finalText = $this->clampReply($finalText, (int) $customerAi->max_reply_chars);
             $this->conversations->storeOutboundAi($conversation->fresh(), $finalText, $run->model);
         }
 
+        $charge = $this->settleInboxCharge($business, $run, $surface, $modelKey, $usageBag);
         $run->update([
             'status' => $handedOff ? 'handed_off' : 'completed',
             'completed_at' => now(),
@@ -305,6 +361,11 @@ class BusinessAgent
                 'allow_reply' => $allowReply,
                 'classify' => $classify,
                 'silent' => ! $allowReply,
+                'surface' => $surface,
+                'ai_task_charge_id' => $charge?->id,
+                'cost_usd' => $charge?->cost_usd,
+                'cost_da' => $charge?->cost_da,
+                'usage' => $usageBag,
             ],
         ]);
 
@@ -319,6 +380,8 @@ class BusinessAgent
         string $system,
         bool $allowReply,
         string $replyLanguage,
+        string $surface,
+        string $modelKey,
     ): AgentRun {
         $history = array_values(array_filter(
             $this->memory->messages($conversation),
@@ -392,6 +455,7 @@ class BusinessAgent
         }
 
         $usage = is_array($result['usage'] ?? null) ? $result['usage'] : [];
+        $charge = $this->settleInboxCharge($business, $run, $surface, $modelKey, $usage);
         $run->update([
             'status' => ! empty($result['error']) ? 'failed' : ($handedOff ? 'handed_off' : 'completed'),
             'completed_at' => now(),
@@ -404,10 +468,76 @@ class BusinessAgent
                 'allow_reply' => $allowReply,
                 'runtime' => 'sk',
                 'session_id' => $result['session_id'] ?? null,
+                'surface' => $surface,
+                'ai_task_charge_id' => $charge?->id,
+                'cost_usd' => $charge?->cost_usd,
+                'cost_da' => $charge?->cost_da,
+                'usage' => $usage,
             ],
         ]);
 
         return $run->fresh('toolCalls');
+    }
+
+    /**
+     * @param  array<string, mixed>  $usage
+     */
+    private function settleInboxCharge(
+        Business $business,
+        AgentRun $run,
+        string $surface,
+        string $modelKey,
+        array $usage,
+    ): ?AiTaskCharge {
+        $taskType = $surface === 'comment'
+            ? AiTaskCharge::TYPE_AGENT_COMMENT_REPLY
+            : AiTaskCharge::TYPE_AGENT_DM_REPLY;
+
+        try {
+            return $this->billing->chargeAiUsage(
+                $business,
+                null,
+                $taskType,
+                $modelKey,
+                $usage,
+                AgentRun::class,
+                $run->id,
+                ['surface' => $surface],
+            );
+        } catch (InsufficientWalletException|WalletOwnerMissingException $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array{prompt_tokens: int, completion_tokens: int, cost_usd: float, fal_calls: int, calls_with_cost: int}
+     */
+    private function usageFromFalChat(array $response): array
+    {
+        $raw = is_array($response['usage'] ?? null) ? $response['usage'] : [];
+        $cost = (float) ($raw['cost'] ?? $raw['cost_usd'] ?? 0);
+
+        return [
+            'prompt_tokens' => (int) ($raw['prompt_tokens'] ?? 0),
+            'completion_tokens' => (int) ($raw['completion_tokens'] ?? 0),
+            'cost_usd' => $cost,
+            'fal_calls' => 1,
+            'calls_with_cost' => $cost > 0 ? 1 : 0,
+        ];
+    }
+
+    private function customerModelKey(CustomerAiSetting $customerAi): string
+    {
+        $key = (string) ($customerAi->llm_model ?? '');
+        $catalog = app(LlmModelCatalog::class);
+        if ($key !== '' && $catalog->isValid($key)) {
+            return (string) $catalog->resolve($key)['id'];
+        }
+
+        return (string) $catalog->resolve(null)['id'];
     }
 
     private function customerModel(CustomerAiSetting $customerAi): string

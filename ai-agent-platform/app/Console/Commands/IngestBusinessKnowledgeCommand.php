@@ -25,7 +25,10 @@ class IngestBusinessKnowledgeCommand extends Command
         foreach ($ids as $id) {
             $job = new IngestBusinessKnowledgeJob((int) $id, $namespace);
             if ($this->option('sync')) {
-                $job->handle(app(\App\AI\Runtime\SkAgentClient::class));
+                $job->handle(
+                    app(\App\AI\Runtime\SkAgentClient::class),
+                    app(\App\Services\Wallet\AiTaskBillingService::class),
+                );
                 $this->info("Ingested business {$id} ({$namespace})");
             } else {
                 dispatch($job);

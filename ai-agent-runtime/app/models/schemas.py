@@ -100,6 +100,7 @@ class KnowledgeIngestResponse(BaseModel):
     business_id: int
     source_type: str
     source_id: str
+    usage: UsagePayload = Field(default_factory=UsagePayload)
 
 
 class KnowledgeSearchHit(BaseModel):
@@ -131,6 +132,7 @@ class IdentityBuildResponse(BaseModel):
     namespaces: list[str] = Field(default_factory=list)
     summary: str = ""
     storage: str = "supabase"
+    usage: UsagePayload = Field(default_factory=UsagePayload)
     error: str | None = None
 
 

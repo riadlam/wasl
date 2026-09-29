@@ -11,7 +11,39 @@ class AiTaskCharge extends Model
 
     public const TYPE_AGENT_IMAGE = 'agent_image_gen';
 
+    public const TYPE_AGENT_DM_REPLY = 'agent_dm_reply';
+
+    public const TYPE_AGENT_COMMENT_REPLY = 'agent_comment_reply';
+
+    public const TYPE_AGENT_COMMENT_PRIVATE_DM = 'agent_comment_priv_dm';
+
+    public const TYPE_AGENT_RAG = 'agent_rag';
+
+    public const TYPE_AGENT_TRAINING = 'agent_training';
+
+    public const TYPE_AGENT_CAMPAIGN_PLAN = 'agent_campaign_plan';
+
+    public const TYPE_AGENT_UTILITY = 'agent_utility';
+
     public const STATUS_CHARGED = 'charged';
+
+    /**
+     * @return list<string>
+     */
+    public static function taskTypes(): array
+    {
+        return [
+            self::TYPE_AGENT_CHAT,
+            self::TYPE_AGENT_IMAGE,
+            self::TYPE_AGENT_DM_REPLY,
+            self::TYPE_AGENT_COMMENT_REPLY,
+            self::TYPE_AGENT_COMMENT_PRIVATE_DM,
+            self::TYPE_AGENT_RAG,
+            self::TYPE_AGENT_TRAINING,
+            self::TYPE_AGENT_CAMPAIGN_PLAN,
+            self::TYPE_AGENT_UTILITY,
+        ];
+    }
 
     protected $fillable = [
         'business_id',

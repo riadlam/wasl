@@ -618,6 +618,21 @@ TEXT;
             ];
         }
 
+        try {
+            $this->billing->chargeAiUsage(
+                $business,
+                $user,
+                \App\Models\AiTaskCharge::TYPE_AGENT_UTILITY,
+                $business->agentSettings?->llm_model,
+                is_array($result['usage'] ?? null) ? $result['usage'] : [],
+                null,
+                null,
+                ['surface' => 'translate_owner_texts', 'trace_id' => $traceId],
+            );
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         $texts = is_array($result['texts'] ?? null) ? $result['texts'] : [];
         $outCards = [];
         foreach ($confirmCards as $i => $card) {

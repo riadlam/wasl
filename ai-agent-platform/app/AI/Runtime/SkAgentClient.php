@@ -148,12 +148,13 @@ class SkAgentClient
                 'namespaces' => is_array($data['namespaces'] ?? null) ? $data['namespaces'] : [],
                 'summary' => (string) ($data['summary'] ?? ''),
                 'storage' => (string) ($data['storage'] ?? 'supabase'),
+                'usage' => $this->normalizeUsage(is_array($data['usage'] ?? null) ? $data['usage'] : []),
                 'error' => isset($data['error']) ? (string) $data['error'] : null,
             ];
         } catch (Throwable $e) {
             report($e);
 
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'error' => $e->getMessage(), 'usage' => $this->normalizeUsage([])];
         }
     }
 
@@ -217,14 +218,21 @@ class SkAgentClient
                 ]);
 
             if (! $response->successful()) {
-                return ['ok' => false, 'error' => 'http_'.$response->status().': '.$response->body()];
+                return ['ok' => false, 'error' => 'http_'.$response->status().': '.$response->body(), 'usage' => $this->normalizeUsage([])];
             }
 
-            return array_merge(['ok' => true], $response->json() ?? []);
+            $data = $response->json() ?? [];
+            if (! is_array($data)) {
+                return ['ok' => false, 'error' => 'invalid_json', 'usage' => $this->normalizeUsage([])];
+            }
+
+            return array_merge(['ok' => true], $data, [
+                'usage' => $this->normalizeUsage(is_array($data['usage'] ?? null) ? $data['usage'] : []),
+            ]);
         } catch (Throwable $e) {
             report($e);
 
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'error' => $e->getMessage(), 'usage' => $this->normalizeUsage([])];
         }
     }
 
@@ -255,11 +263,13 @@ class SkAgentClient
 
             $json = $response->json() ?? [];
 
-            return array_merge(['ok' => (bool) ($json['ok'] ?? true)], $json);
+            return array_merge(['ok' => (bool) ($json['ok'] ?? true)], $json, [
+                'usage' => $this->normalizeUsage(is_array($json['usage'] ?? null) ? $json['usage'] : []),
+            ]);
         } catch (Throwable $e) {
             report($e);
 
-            return ['ok' => false, 'error' => $e->getMessage()];
+            return ['ok' => false, 'error' => $e->getMessage(), 'usage' => $this->normalizeUsage([])];
         }
     }
 
@@ -1172,6 +1182,21 @@ class SkAgentClient
     }
 
     /**
+     * @param  array<string, mixed>  $usage
+     * @return array{prompt_tokens: int, completion_tokens: int, cost_usd: float, fal_calls: int, calls_with_cost: int}
+     */
+    private function normalizeUsage(array $usage): array
+    {
+        return [
+            'prompt_tokens' => (int) ($usage['prompt_tokens'] ?? 0),
+            'completion_tokens' => (int) ($usage['completion_tokens'] ?? 0),
+            'cost_usd' => (float) ($usage['cost_usd'] ?? $usage['cost'] ?? 0),
+            'fal_calls' => (int) ($usage['fal_calls'] ?? 0),
+            'calls_with_cost' => (int) ($usage['calls_with_cost'] ?? 0),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
@@ -1185,13 +1210,7 @@ class SkAgentClient
             'tool_calls' => is_array($data['tool_calls'] ?? null) ? $data['tool_calls'] : [],
             'generated_assets' => is_array($data['generated_assets'] ?? null) ? $data['generated_assets'] : [],
             'pending_image_jobs' => is_array($data['pending_image_jobs'] ?? null) ? $data['pending_image_jobs'] : [],
-            'usage' => [
-                'prompt_tokens' => (int) ($usage['prompt_tokens'] ?? 0),
-                'completion_tokens' => (int) ($usage['completion_tokens'] ?? 0),
-                'cost_usd' => (float) ($usage['cost_usd'] ?? 0),
-                'fal_calls' => (int) ($usage['fal_calls'] ?? 0),
-                'calls_with_cost' => (int) ($usage['calls_with_cost'] ?? 0),
-            ],
+            'usage' => $this->normalizeUsage($usage),
             'citations' => is_array($data['citations'] ?? null) ? $data['citations'] : [],
             'session_id' => isset($data['session_id']) ? (string) $data['session_id'] : null,
             'runtime' => (string) ($data['runtime'] ?? 'sk'),

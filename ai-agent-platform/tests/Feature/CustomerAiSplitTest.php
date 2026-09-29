@@ -84,21 +84,32 @@ class CustomerAiSplitTest extends TestCase
 
     public function test_customer_ai_uses_its_own_model_and_reply_limit(): void
     {
-        ['business' => $business] = $this->makeShop();
+        ['owner' => $owner, 'business' => $business] = $this->makeShop();
+        $owner->update(['wallet_balance_da' => 200]);
         config([
             'services.fal.key' => 'fal-test',
+            'ai_runtime.driver' => 'php',
             'ai_llm_models.models.test_cheap' => ['label' => 'Cheap', 'model' => 'vendor/cheap-model', 'price_usd' => 0.001],
         ]);
         CustomerAiSetting::forBusiness($business)->update(['llm_model' => 'test_cheap', 'max_reply_chars' => 120]);
         $inbound = $this->simulatorMessage($business, 'Salam, do you have sneakers?');
         $long = 'Yes we have the Air Max sneakers in stock. '.str_repeat('They are comfortable and light for daily wear. ', 8);
 
-        Http::fake([
-            'fal.run/*' => Http::response([
+        Http::fake(function (Request $request) use ($long) {
+            $payload = $request->data();
+            $system = (string) (($payload['messages'][0]['content'] ?? '') ?: '');
+            if (str_contains($system, 'CustomerApprover')) {
+                return Http::response([
+                    'choices' => [['message' => ['content' => '{"decision":"approved","score":1,"reasons":[],"feedback":""}']]],
+                    'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 5, 'cost' => 0.0001],
+                ]);
+            }
+
+            return Http::response([
                 'choices' => [['message' => ['content' => $long]]],
                 'usage' => ['prompt_tokens' => 20, 'completion_tokens' => 30, 'cost' => 0.0001],
-            ]),
-        ]);
+            ]);
+        });
 
         $run = app(BusinessAgent::class)->run($inbound);
 

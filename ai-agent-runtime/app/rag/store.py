@@ -59,6 +59,16 @@ class KnowledgeStore:
     def available(self) -> bool:
         return bool(self.settings.supabase_db_url)
 
+    @staticmethod
+    def empty_usage() -> dict[str, Any]:
+        return {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "cost_usd": 0.0,
+            "fal_calls": 0,
+            "calls_with_cost": 0,
+        }
+
     async def upsert_document(
         self,
         *,
@@ -70,16 +80,19 @@ class KnowledgeStore:
         metadata: dict[str, Any] | None = None,
         chunk_size: int = 800,
         chunk_overlap: int = 120,
-    ) -> int:
+    ) -> tuple[int, dict[str, Any]]:
+        """Upsert chunks. Returns (chunks_upserted, fal_usage)."""
         await self.connect()
         pieces = chunk_text(content, chunk_size, chunk_overlap)
         if not pieces:
-            return 0
+            return 0, self.empty_usage()
         if not self._pool:
             logger.warning("KnowledgeStore: no DB pool; dry-run ingest of %s chunks", len(pieces))
-            return len(pieces)
+            return len(pieces), self.empty_usage()
 
         embeddings = await self.llm.embed_texts(pieces)
+        usage = self.empty_usage()
+        usage["fal_calls"] = 1
         meta = metadata or {}
         async with self._pool.acquire() as conn:
             await conn.execute(
@@ -122,7 +135,7 @@ class KnowledgeStore:
                     __import__("json").dumps(meta),
                     vector_literal,
                 )
-        return len(pieces)
+        return len(pieces), usage
 
     async def search(
         self,

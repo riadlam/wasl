@@ -84,7 +84,7 @@ class BusinessIdentityAgent:
                     "dms": len(corpus.get("dms") or []),
                 },
             )
-            identity = await self._synthesize(corpus, model=model)
+            identity, usage = await self._synthesize(corpus, model=model)
             activity().output("identity synthesized (in-memory)", identity)
             docs = self._chunk_documents(identity, corpus)
             total = 0
@@ -93,7 +93,7 @@ class BusinessIdentityAgent:
                 if not content.strip():
                     continue
                 source_id = f"{social_account_id}:{source_suffix}"
-                count = await self.knowledge.upsert_document(
+                count, embed_usage = await self.knowledge.upsert_document(
                     business_id=business_id,
                     namespace=namespace,
                     source_type=self.SOURCE_TYPE,
@@ -106,6 +106,7 @@ class BusinessIdentityAgent:
                     },
                 )
                 total += count
+                usage = self._merge_usage(usage, embed_usage)
                 if namespace not in namespaces:
                     namespaces.append(namespace)
                 activity().section(
@@ -122,6 +123,7 @@ class BusinessIdentityAgent:
                 "namespaces": namespaces,
                 "summary": str(identity.get("summary") or ""),
                 "storage": "supabase",
+                "usage": usage,
             }
             activity().output("identity build result", out)
             return out
@@ -284,7 +286,7 @@ class BusinessIdentityAgent:
         )
         return out
 
-    async def _synthesize(self, corpus: dict[str, Any], model: str | None = None) -> dict[str, Any]:
+    async def _synthesize(self, corpus: dict[str, Any], model: str | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
         compact = self._compact_corpus(corpus)
         result = await self.llm.chat_completion(
             [
@@ -294,7 +296,25 @@ class BusinessIdentityAgent:
             model=model,
             temperature=0.15,
         )
-        return self._parse_identity(result.get("content") or "")
+        raw_usage = result.get("usage") or {}
+        usage = {
+            "prompt_tokens": int(raw_usage.get("prompt_tokens") or 0),
+            "completion_tokens": int(raw_usage.get("completion_tokens") or 0),
+            "cost_usd": float(raw_usage.get("cost_usd") or raw_usage.get("cost") or 0),
+            "fal_calls": 1,
+            "calls_with_cost": 1 if float(raw_usage.get("cost_usd") or raw_usage.get("cost") or 0) > 0 else 0,
+        }
+        return self._parse_identity(result.get("content") or ""), usage
+
+    @staticmethod
+    def _merge_usage(into: dict[str, Any], extra: dict[str, Any] | None) -> dict[str, Any]:
+        if not extra:
+            return into
+        out = dict(into)
+        for key in ("prompt_tokens", "completion_tokens", "fal_calls", "calls_with_cost"):
+            out[key] = int(out.get(key) or 0) + int(extra.get(key) or 0)
+        out["cost_usd"] = float(out.get("cost_usd") or 0) + float(extra.get("cost_usd") or 0)
+        return out
 
     def _compact_corpus(self, corpus: dict[str, Any]) -> dict[str, Any]:
         posts = []

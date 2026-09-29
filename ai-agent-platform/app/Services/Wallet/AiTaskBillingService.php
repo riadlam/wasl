@@ -111,6 +111,34 @@ class AiTaskBillingService
         ?int $messageId = null,
         array $usage = [],
     ): ?AiTaskCharge {
+        return $this->chargeAiUsage(
+            $business,
+            $actor,
+            AiTaskCharge::TYPE_AGENT_CHAT,
+            $modelKey,
+            $usage,
+            AgentChatMessage::class,
+            $messageId,
+        );
+    }
+
+    /**
+     * Charge shop owner wallet from Fal/SK usage for any AI surface.
+     * Returns null when usage has no Fal work (never invents a charge).
+     *
+     * @param  array<string, mixed>  $usage
+     * @param  array<string, mixed>  $meta
+     */
+    public function chargeAiUsage(
+        Business $business,
+        ?User $actor,
+        string $taskType,
+        ?string $modelKey,
+        array $usage = [],
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        array $meta = [],
+    ): ?AiTaskCharge {
         $bill = $this->resolveChatBill($modelKey, $usage);
         if ($bill === null) {
             return null;
@@ -121,15 +149,47 @@ class AiTaskBillingService
         return $this->record(
             $business,
             $actor,
-            AiTaskCharge::TYPE_AGENT_CHAT,
+            $taskType,
             (string) $model['id'],
             (string) $model['model'],
             $bill['cost_usd'],
-            AgentChatMessage::class,
-            $messageId,
-            array_merge($bill['meta'], ['billed_from' => $bill['billed_from']]),
+            $referenceType ?? '',
+            $referenceId,
+            array_merge($bill['meta'], ['billed_from' => $bill['billed_from']], $meta),
             $bill['da_mode'],
         );
+    }
+
+    /**
+     * Merge multiple Fal/SK usage payloads into one billable bag.
+     *
+     * @param  list<array<string, mixed>|null>  $parts
+     * @return array{prompt_tokens: int, completion_tokens: int, cost_usd: float, fal_calls: int, calls_with_cost: int}
+     */
+    public function mergeUsage(array ...$parts): array
+    {
+        $out = [
+            'prompt_tokens' => 0,
+            'completion_tokens' => 0,
+            'cost_usd' => 0.0,
+            'fal_calls' => 0,
+            'calls_with_cost' => 0,
+        ];
+
+        foreach ($parts as $part) {
+            if (! is_array($part)) {
+                continue;
+            }
+            $out['prompt_tokens'] += (int) ($part['prompt_tokens'] ?? 0);
+            $out['completion_tokens'] += (int) ($part['completion_tokens'] ?? 0);
+            $out['cost_usd'] += (float) ($part['cost_usd'] ?? 0);
+            $out['fal_calls'] += (int) ($part['fal_calls'] ?? 0);
+            $out['calls_with_cost'] += (int) ($part['calls_with_cost'] ?? 0);
+        }
+
+        $out['cost_usd'] = round($out['cost_usd'], 8);
+
+        return $out;
     }
 
     public function chargeImageSuccess(Business $business, AgentImageJob $job, ?User $actor = null): AiTaskCharge
@@ -209,12 +269,14 @@ class AiTaskBillingService
         string $daMode = 'ceil',
     ): AiTaskCharge {
         return DB::transaction(function () use ($business, $actor, $taskType, $modelKey, $providerModel, $costUsd, $referenceType, $referenceId, $meta, $daMode) {
+            $refType = $referenceType !== '' ? $referenceType : null;
+
             $ledger = $this->wallets->chargeFromUsd(
                 $business,
                 $costUsd,
                 $taskType,
                 $actor,
-                $referenceType,
+                $refType,
                 $referenceId,
                 $meta,
                 $daMode,
@@ -233,7 +295,7 @@ class AiTaskBillingService
                 'cost_da' => (float) $ledger->amount_da,
                 'usd_to_da' => $this->wallets->usdToDaRate(),
                 'status' => AiTaskCharge::STATUS_CHARGED,
-                'reference_type' => $referenceType,
+                'reference_type' => $refType,
                 'reference_id' => $referenceId,
                 'wallet_ledger_id' => $ledger->id,
                 'meta' => $meta,

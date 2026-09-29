@@ -204,6 +204,23 @@ class AiCampaignService
                     'keys' => [$sourceId, $latestKey],
                     'chars' => mb_strlen($content),
                 ]);
+                try {
+                    $this->billing->chargeAiUsage(
+                        $business,
+                        null,
+                        \App\Models\AiTaskCharge::TYPE_AGENT_RAG,
+                        $business->agentSettings?->llm_model,
+                        $this->billing->mergeUsage(
+                            is_array($primary['usage'] ?? null) ? $primary['usage'] : [],
+                            is_array($latest['usage'] ?? null) ? $latest['usage'] : [],
+                        ),
+                        AiCampaign::class,
+                        $campaign->id,
+                        ['surface' => 'campaign_memory_ingest'],
+                    );
+                } catch (Throwable $e) {
+                    report($e);
+                }
             }
         } catch (Throwable $e) {
             Log::warning('campaigns.memory_ingest_failed', [
@@ -520,6 +537,10 @@ class AiCampaignService
 
         $business->loadMissing('agentSettings');
         if (AiRuntime::usesSk($business)) {
+            $this->wallets->authorizeBusinessAi(
+                $business,
+                $this->billing->chatAuthorizeDa($business->agentSettings?->llm_model),
+            );
             $sk = $this->sk->planCampaignSlots(
                 $business,
                 $user,
@@ -558,6 +579,20 @@ class AiCampaignService
                             }
                         }
                     }
+                }
+                try {
+                    $this->billing->chargeAiUsage(
+                        $business,
+                        $user,
+                        \App\Models\AiTaskCharge::TYPE_AGENT_CAMPAIGN_PLAN,
+                        $business->agentSettings?->llm_model,
+                        is_array($sk['usage'] ?? null) ? $sk['usage'] : [],
+                        AiCampaign::class,
+                        $campaign->id,
+                        ['surface' => 'campaign_plan_slots'],
+                    );
+                } catch (\Throwable $e) {
+                    report($e);
                 }
             } elseif (! empty($sk['error'])) {
                 Log::warning('campaigns.plan_slots_sk_failed', [

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\AiUsageController;
 use App\Http\Controllers\Api\Admin\TenantController;
 use App\Http\Controllers\Api\AgentBehaviorRuleController;
 use App\Http\Controllers\Api\AgentController;
@@ -55,6 +56,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/businesses/{id}/impersonate', [TenantController::class, 'impersonate']);
         Route::post('/stop-impersonation', [TenantController::class, 'stopImpersonation']);
         Route::post('/wallet/topup', [WalletController::class, 'topup']);
+        Route::get('/ai-usage', [AiUsageController::class, 'index']);
+        Route::get('/wallet/balances', [AiUsageController::class, 'balances']);
     });
 
     Route::middleware('shop')->group(function () {

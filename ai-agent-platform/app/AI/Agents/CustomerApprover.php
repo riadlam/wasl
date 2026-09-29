@@ -70,13 +70,20 @@ class CustomerApprover
                 'score' => 0.0,
                 'reasons' => ['approver_error'],
                 'feedback' => 'Rewrite without invented prices or stock; stay grounded.',
-                'usage' => ['prompt_tokens' => 0, 'completion_tokens' => 0],
+                'usage' => [
+                    'prompt_tokens' => 0,
+                    'completion_tokens' => 0,
+                    'cost_usd' => 0.0,
+                    'fal_calls' => 0,
+                    'calls_with_cost' => 0,
+                ],
             ];
         }
 
         $content = (string) ($response['choices'][0]['message']['content'] ?? '');
         $parsed = $this->parse($content);
         $usage = $response['usage'] ?? [];
+        $cost = (float) ($usage['cost'] ?? $usage['cost_usd'] ?? 0);
 
         return [
             'decision' => $parsed['decision'],
@@ -86,6 +93,9 @@ class CustomerApprover
             'usage' => [
                 'prompt_tokens' => (int) ($usage['prompt_tokens'] ?? 0),
                 'completion_tokens' => (int) ($usage['completion_tokens'] ?? 0),
+                'cost_usd' => $cost,
+                'fal_calls' => 1,
+                'calls_with_cost' => $cost > 0 ? 1 : 0,
             ],
         ];
     }
@@ -103,7 +113,7 @@ class CustomerApprover
         int $maxRounds = 2,
         string $hardBusinessRules = '',
     ): array {
-        $usage = ['prompt_tokens' => 0, 'completion_tokens' => 0, 'fal_calls' => 0];
+        $usage = ['prompt_tokens' => 0, 'completion_tokens' => 0, 'cost_usd' => 0.0, 'fal_calls' => 0, 'calls_with_cost' => 0];
         $rounds = [];
         $current = $draftReply;
         $last = [];
@@ -112,7 +122,9 @@ class CustomerApprover
             $review = $this->review($current, $customerText, $evidence, $model, $hardBusinessRules);
             $usage['prompt_tokens'] += (int) ($review['usage']['prompt_tokens'] ?? 0);
             $usage['completion_tokens'] += (int) ($review['usage']['completion_tokens'] ?? 0);
-            $usage['fal_calls']++;
+            $usage['cost_usd'] += (float) ($review['usage']['cost_usd'] ?? 0);
+            $usage['fal_calls'] += (int) ($review['usage']['fal_calls'] ?? 1);
+            $usage['calls_with_cost'] += (int) ($review['usage']['calls_with_cost'] ?? 0);
             $last = $review;
             $rounds[] = [
                 'round' => $round,
@@ -142,7 +154,9 @@ class CustomerApprover
             if (is_array($revised) && isset($revised['usage'])) {
                 $usage['prompt_tokens'] += (int) ($revised['usage']['prompt_tokens'] ?? 0);
                 $usage['completion_tokens'] += (int) ($revised['usage']['completion_tokens'] ?? 0);
-                $usage['fal_calls']++;
+                $usage['cost_usd'] += (float) ($revised['usage']['cost_usd'] ?? 0);
+                $usage['fal_calls'] += (int) ($revised['usage']['fal_calls'] ?? 1);
+                $usage['calls_with_cost'] += (int) ($revised['usage']['calls_with_cost'] ?? 0);
             }
         }
 

@@ -5,10 +5,15 @@ namespace App\Services\Comments;
 use App\AI\LlmModels\LlmModelCatalog;
 use App\AI\Providers\FalLlmProvider;
 use App\AI\ReplyLanguage;
+use App\Exceptions\InsufficientWalletException;
+use App\Exceptions\WalletOwnerMissingException;
+use App\Models\AiTaskCharge;
 use App\Models\Business;
 use App\Models\Message;
 use App\Models\SocialAccount;
 use App\Services\Agents\BehaviorRulesPrompt;
+use App\Services\Wallet\AiTaskBillingService;
+use App\Services\Wallet\WalletService;
 use Throwable;
 
 /**
@@ -22,6 +27,8 @@ class CommentPrivateDmComposer
         private LlmModelCatalog $models,
         private CommentPostContextResolver $posts,
         private BehaviorRulesPrompt $rules,
+        private WalletService $wallets,
+        private AiTaskBillingService $billing,
     ) {}
 
     public function compose(Business $business, Message $inbound, ?SocialAccount $account): string
@@ -60,6 +67,12 @@ TXT;
         $model = $this->models->resolve($business->agentSettings?->llm_model);
 
         try {
+            $this->wallets->authorizeBusinessAi($business, $this->billing->chatAuthorizeDa($model['id']));
+        } catch (InsufficientWalletException|WalletOwnerMissingException) {
+            return $fallback;
+        }
+
+        try {
             $response = $this->llm->chat(
                 [
                     ['role' => 'system', 'content' => $system],
@@ -73,6 +86,30 @@ TXT;
                     'timeout' => 45,
                 ],
             );
+            $raw = is_array($response['usage'] ?? null) ? $response['usage'] : [];
+            $cost = (float) ($raw['cost'] ?? $raw['cost_usd'] ?? 0);
+            $usage = [
+                'prompt_tokens' => (int) ($raw['prompt_tokens'] ?? 0),
+                'completion_tokens' => (int) ($raw['completion_tokens'] ?? 0),
+                'cost_usd' => $cost,
+                'fal_calls' => 1,
+                'calls_with_cost' => $cost > 0 ? 1 : 0,
+            ];
+            try {
+                $this->billing->chargeAiUsage(
+                    $business,
+                    null,
+                    AiTaskCharge::TYPE_AGENT_COMMENT_PRIVATE_DM,
+                    (string) $model['id'],
+                    $usage,
+                    Message::class,
+                    $inbound->id,
+                    ['surface' => 'comment_private_dm'],
+                );
+            } catch (InsufficientWalletException|WalletOwnerMissingException $e) {
+                report($e);
+            }
+
             $text = trim((string) ($response['choices'][0]['message']['content'] ?? ''));
             $text = trim(preg_replace('/^```(?:text)?\s*|\s*```$/u', '', $text) ?? $text);
             if ($text !== '') {

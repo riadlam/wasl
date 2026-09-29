@@ -5,10 +5,12 @@ namespace App\Services;
 use App\AI\Providers\FalLlmProvider;
 use App\Models\AgentChatMessage;
 use App\Models\AiProfilePerChannel;
+use App\Models\AiTaskCharge;
 use App\Models\Business;
 use App\Models\ChannelProfileInterview;
 use App\Models\SocialAccount;
 use App\Models\User;
+use App\Services\Wallet\AiTaskBillingService;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -19,6 +21,7 @@ class ProfileInterviewService
     public function __construct(
         private FalLlmProvider $llm,
         private \App\AI\Runtime\SkAgentClient $skClient,
+        private AiTaskBillingService $billing,
     ) {}
 
     /**
@@ -86,7 +89,7 @@ class ProfileInterviewService
         }
 
         $reply = \App\AI\ReplyLanguage::forBusiness($business);
-        $questions = $this->questionsForGaps($this->profileForGaps($row), $gaps, $reply);
+        $questions = $this->questionsForGaps($business, $this->profileForGaps($row), $gaps, $reply);
         $interview = ChannelProfileInterview::query()->create([
             'business_id' => $business->id,
             'social_account_id' => $row->social_account_id,
@@ -508,9 +511,9 @@ class ProfileInterviewService
      * @param  list<array{field_path: string, hint: string, gap_label: string}>  $gaps
      * @return list<array{id: string, field_path: string, question: string, answer: null, gap_label: string}>
      */
-    private function questionsForGaps(array $profile, array $gaps, string $language = 'Darija'): array
+    private function questionsForGaps(Business $business, array $profile, array $gaps, string $language = 'Darija'): array
     {
-        $phrased = $this->phraseWithLlm($profile, $gaps, $language);
+        $phrased = $this->phraseWithLlm($business, $profile, $gaps, $language);
         $questions = [];
         foreach ($gaps as $index => $gap) {
             $question = $phrased[$gap['field_path']] ?? $gap['hint'];
@@ -535,7 +538,7 @@ class ProfileInterviewService
      * @param  list<array{field_path: string, hint: string, gap_label: string}>  $gaps
      * @return array<string, string>
      */
-    private function phraseWithLlm(array $profile, array $gaps, string $language = 'Darija'): array
+    private function phraseWithLlm(Business $business, array $profile, array $gaps, string $language = 'Darija'): array
     {
         $page = (string) ($profile['channel']['page_name'] ?? $profile['business']['display_name'] ?? '');
         $reply = \App\AI\ReplyLanguage::normalize($language);
@@ -557,6 +560,28 @@ class ProfileInterviewService
                 'json_object' => true,
                 'timeout' => 45,
             ]);
+            $rawUsage = is_array($response['usage'] ?? null) ? $response['usage'] : [];
+            $cost = (float) ($rawUsage['cost'] ?? $rawUsage['cost_usd'] ?? 0);
+            try {
+                $this->billing->chargeAiUsage(
+                    $business,
+                    null,
+                    AiTaskCharge::TYPE_AGENT_UTILITY,
+                    $business->agentSettings?->llm_model,
+                    [
+                        'prompt_tokens' => (int) ($rawUsage['prompt_tokens'] ?? 0),
+                        'completion_tokens' => (int) ($rawUsage['completion_tokens'] ?? 0),
+                        'cost_usd' => $cost,
+                        'fal_calls' => 1,
+                        'calls_with_cost' => $cost > 0 ? 1 : 0,
+                    ],
+                    null,
+                    null,
+                    ['surface' => 'profile_interview_phrase'],
+                );
+            } catch (Throwable $e) {
+                report($e);
+            }
             $content = $response['choices'][0]['message']['content'] ?? '';
             if (! is_string($content)) {
                 return [];
@@ -626,7 +651,7 @@ class ProfileInterviewService
 
         $business = Business::query()->find($interview->business_id);
         if ($business) {
-            $this->skClient->ingestKnowledge(
+            $result = $this->skClient->ingestKnowledge(
                 $business,
                 $namespace,
                 'profile_interview',
@@ -638,6 +663,22 @@ class ProfileInterviewService
                     'storage' => 'supabase',
                 ],
             );
+            if ($result['ok'] ?? false) {
+                try {
+                    $this->billing->chargeAiUsage(
+                        $business,
+                        null,
+                        AiTaskCharge::TYPE_AGENT_RAG,
+                        $business->agentSettings?->llm_model,
+                        is_array($result['usage'] ?? null) ? $result['usage'] : [],
+                        ChannelProfileInterview::class,
+                        $interview->id,
+                        ['surface' => 'profile_interview_ingest', 'field_path' => $fieldPath],
+                    );
+                } catch (Throwable $e) {
+                    report($e);
+                }
+            }
         }
 
         // Status metadata only — track answered interview fields, not full identity JSON.

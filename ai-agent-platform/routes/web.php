@@ -6,9 +6,8 @@ use App\Http\Controllers\CampaignSlotEditLinkController;
 use App\Http\Controllers\SocialApiCallbackController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// Landing page hidden for now — home goes straight to login.
+Route::redirect('/', '/login');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'create'])->name('login');
